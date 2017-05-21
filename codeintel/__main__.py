@@ -1,0 +1,3 @@
+import codeintel
+
+codeintel.main()

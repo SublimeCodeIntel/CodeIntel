@@ -1,0 +1,67 @@
+language: python
+
+cache:
+  directories:
+  - "$HOME/.cache/pip"
+  - "$HOME/.pyenv"
+
+matrix:
+  include:
+    - os: linux
+      dist: trusty
+      python: '2.6'
+    - os: linux
+      dist: trusty
+      python: '2.7'
+    # - os: linux
+    #   dist: trusty
+    #   python: '3.3'
+    # - os: linux
+    #   dist: trusty
+    #   python: '3.4'
+    # - os: linux
+    #   dist: trusty
+    #   python: '3.5'
+    # - os: linux
+    #   dist: trusty
+    #   python: '3.6'
+    - os: linux
+      dist: trusty
+      python: pypy
+    - os: osx
+      language: objective-c
+      env: PYENV_VERSION=2.7.12
+    # - os: osx
+    #   language: objective-c
+    #   env: PYENV_VERSION=3.5.2
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_i686
+           PRE_CMD=linux32
+
+install:
+  - if [[ "$DOCKER_IMAGE" != "" ]]; then docker pull $DOCKER_IMAGE; fi
+
+script:
+  - if [[ "$DOCKER_IMAGE" != "" ]]; then docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/.travis/manylinux-build.sh; else travis_retry python setup.py bdist_wheel; fi
+  - ls dist/
+
+artifacts:
+  # bdist_wheel puts your built wheel in the dist directory
+  - path: dist/*
+
+# deploy:
+#   provider: releases
+#   api_key:
+#     secure: QiadMGAmtPw+Ut7LWqa3U/tImPIgiPH79mM9o8DGBckcacp9HkDYvCGuOjs5hZbCBBuQ6IAkikotS8iCSwHey1GK9jSDbpgKvVGiACdp8HNhitY8V/S3e1UukDlMeu+Q7vCJtynSGX0BJuiOQB8ZQyQ2HEZ7kMQgTLCEO1Uljhc=
+#   file: dist/*.whl
+#   file_glob: true
+#   on:
+#     repo: Kronuz/CodeIntel
+#     tags: true
+#   skip_cleanup: true
