@@ -1,0 +1,13 @@
+.DS_Store
+
+.git
+.hg
+.svn
+
+*.pyc
+*.pyo
+*.o
+
+*.egg-info
+build
+dist
