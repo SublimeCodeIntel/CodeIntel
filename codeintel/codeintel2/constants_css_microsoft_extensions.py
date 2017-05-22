@@ -2,6 +2,7 @@
 Microsoft CSS extensions.
 """
 
+from __future__ import absolute_import
 import textwrap
 
 ### START: Auto generated

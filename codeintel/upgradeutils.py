@@ -38,6 +38,7 @@
 Helper code to assist with the Komodo upgrade process.
 """
 
+from __future__ import absolute_import
 import uriparse
 
 def upgrade_mapped_uris_for_prefset(prefset):

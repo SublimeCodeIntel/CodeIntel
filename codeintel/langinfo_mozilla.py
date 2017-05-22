@@ -5,6 +5,7 @@
 that don't logically fit in the other `langinfo_*.py` files.
 """
 
+from __future__ import absolute_import
 import re
 from langinfo import LangInfo
 

@@ -35,6 +35,7 @@
 # 
 # ***** END LICENSE BLOCK *****
 
+from __future__ import absolute_import
 import sys
 import os
 from os.path import (join, dirname, exists, expanduser, splitext, basename,

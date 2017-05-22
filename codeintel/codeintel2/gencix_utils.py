@@ -41,11 +41,12 @@
         http://specs.tl.activestate.com/kd/kd-0100.html#xml-based-import-export-syntax-cix
 """
 
+from __future__ import absolute_import
 import os
 import sys
 import re
 import shutil
-from cStringIO import StringIO
+from six.moves import cStringIO as StringIO
 import warnings
 
 from ciElementTree import Element, ElementTree, SubElement

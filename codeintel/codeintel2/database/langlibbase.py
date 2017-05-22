@@ -6,6 +6,7 @@
 See langlib.py / multilanglib.py
 """
 
+from __future__ import absolute_import
 import logging
 from os.path import join
 from contextlib import contextmanager
@@ -27,8 +28,7 @@ class LangDirsLibBase(object):
         # filter out directories we've already scanned, so that we don't need
         # to report them (this also filters out quite a few spurious
         # notifications)
-        dirs = frozenset(filter(lambda d: d not in self._have_ensured_scanned_from_dir_cache,
-                                self.dirs))
+        dirs = frozenset([d for d in self.dirs if d not in self._have_ensured_scanned_from_dir_cache])
         if not dirs:
             # all directories have already been scanned; nothing to do.
             log.debug("Skipping scanning dirs %r - all scanned",
@@ -96,7 +96,7 @@ class LangDirsLibBase(object):
                     try:
                         buf = self.mgr.buf_from_path(join(dir, base),
                                                      lang=self.lang)
-                    except (EnvironmentError, CodeIntelError), ex:
+                    except (EnvironmentError, CodeIntelError) as ex:
                         # This can occur if the path does not exist, such as a
                         # broken symlink, or we don't have permission to read
                         # the file, or the file does not contain text.

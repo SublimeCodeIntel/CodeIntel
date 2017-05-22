@@ -41,6 +41,7 @@ See the docs strings below for and components/koTextboxAutoComplete.py
 for details and examples.
 """
 
+from __future__ import absolute_import
 import re
 
 

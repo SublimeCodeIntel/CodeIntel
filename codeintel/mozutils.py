@@ -1,6 +1,7 @@
 # Copyright (c) 2000-2008 ActiveState Software Inc.
 # See the file LICENSE.txt for licensing information.
 
+from __future__ import absolute_import
 from xpcom import components
 
 _uuidGenerator = None

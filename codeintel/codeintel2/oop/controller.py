@@ -1,10 +1,12 @@
 #!/usr/bin/env python2
 
+from __future__ import absolute_import
 import codeintel2.common
 from codeintel2.common import EvalController
 import logging
-import cStringIO
+from six.moves import cStringIO as StringIO
 import pprint
+from six.moves import map
 
 log = logging.getLogger("codeintel.oop.controller")
 
@@ -31,7 +33,7 @@ class OOPEvalController(EvalController):
 
         # Set up a *new* logger to record any errors
         # Note that the output will be discarded if there is no error
-        self.log_stream = cStringIO.StringIO()
+        self.log_stream = StringIO()
         self.log_hndlr = logging.StreamHandler(self.log_stream)
         loggerClass = logging.Logger.manager.loggerClass
         if not loggerClass:
@@ -93,7 +95,7 @@ class OOPEvalController(EvalController):
             # We can't exactly serialize blobs directly...
             def defn_serializer(defn):
                 return defn.__dict__
-            self.driver.send(defns=map(defn_serializer, self.defns or []),
+            self.driver.send(defns=list(map(defn_serializer, self.defns or [])),
                              request=self.request, retrigger=retrigger)
         elif self.is_aborted():
             pass # already reported the abort

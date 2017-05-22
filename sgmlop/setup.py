@@ -6,6 +6,7 @@
 # Usage: python setup.py install
 #
 
+from __future__ import absolute_import
 from distutils.core import setup, Extension
 
 setup(

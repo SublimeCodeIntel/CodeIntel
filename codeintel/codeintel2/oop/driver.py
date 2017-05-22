@@ -1,6 +1,10 @@
 #!/usr/bin/env python2
 
+from __future__ import absolute_import
 import logging
+from six.moves import filter
+from six.moves import zip
+import six
 
 log = logging.getLogger("codeintel.oop.driver")
 #log.setLevel(logging.DEBUG)
@@ -27,7 +31,7 @@ import imp
 import itertools
 import json
 import os.path
-import Queue
+from six.moves import queue
 import shutil
 import string
 import sys
@@ -138,7 +142,7 @@ class Driver(threading.Thread):
         self.next_buffer = 0
         self.active_request = None
 
-        self.send_queue = Queue.Queue()
+        self.send_queue = queue.Queue()
         self.send_thread = threading.Thread(name="Codeintel OOP Driver Send Thread",
                                             target=self._send_proc)
         self.send_thread.daemon = True
@@ -269,16 +273,16 @@ class Driver(threading.Thread):
             data["success"] = True
         elif data["success"] is None:
             del data["success"]
-        buf = json.dumps(data, separators=(',',':'))
-        buf_len = str(len(buf))
+        buf = json.dumps(data, separators=(',', ':'))
+        buf_len = u"%i" % len(buf)
         log.debug("sending: %s:[%s]", buf_len, buf)
-        self.send_queue.put(buf)
+        self.send_queue.put(buf.encode('utf-8'))
 
     def _send_proc(self):
         while True:
             buf = self.send_queue.get()
             try:
-                buf_len = str(len(buf))
+                buf_len = (u"%i" % len(buf)).encode('utf-8')
                 self.fd_out.write(buf_len)
                 self.fd_out.write(buf)
             finally:
@@ -462,12 +466,12 @@ class Driver(threading.Thread):
     def report_error(self, message):
         self.send(request=None,
                   command="report-error",
-                  message=unicode(message))
+                  message=six.text_type(message))
 
     def start(self):
         """Start reading from the socket and dump requests into the queue"""
         log.info("Running codeintel driver...")
-        buf = ""
+        buf = b''
         self.send(success=None)
         self.daemon = True
         threading.Thread.start(self)
@@ -482,23 +486,30 @@ class Driver(threading.Thread):
                 log.debug("Input was closed")
                 self.quit = True
                 break
-            if ch == "{":
+            if ch == b'{':
                 size = int(buf, 10)
                 try:
-                    buf = ch + self.fd_in.read(size - 1) # exclude already-read {
+                    buf = ch
+                    while len(buf) < size:
+                        last_size = len(buf)
+                        buf += self.fd_in.read(size - len(buf))
+                        if len(buf) == last_size:
+                            # nothing read, EOF
+                            raise IOError("Failed to read frame from socket")
                 except IOError:
                     log.debug("Failed to read frame data, assuming connection died")
                     self.quit = True
                     break
                 try:
-                    data = json.loads(buf)
+                    data = json.loads(buf.decode('utf-8'))
                     request = Request(data)
                 except Exception as e:
+                    log.debug("Got codeintel request: %r" % buf)
                     log.exception(e)
                     self.exception(message=e.message, request=None)
                     continue
                 finally:
-                    buf = ""
+                    buf = b''
                 if request.get("command") == "abort":
                     self.do_abort(request=request)
                 else:
@@ -506,15 +517,16 @@ class Driver(threading.Thread):
                     with self.queue_cv:
                         self.queue.appendleft(request)
                         self.queue_cv.notify()
-            elif ch in "0123456789":
+            elif ch in b'0123456789':
                 buf += ch
             else:
-                raise ValueError("Invalid request data: " + ch.encode("hex"))
+                raise ValueError("Invalid request data: %s" % hex(ch))
+
+        log.info("Codeintel driver ended")
 
     def run(self):
         """Evaluate and send results back"""
         log.info("Running codeintel eval thread...")
-        buf = ""
         log.debug("default supported commands: %s",
                   ", ".join(self._default_handler.supportedCommands))
         while True:
@@ -570,10 +582,13 @@ class Driver(threading.Thread):
             except RequestFailure as e:
                 self.fail(request=request, **e.kwargs)
             except Exception as e:
-                log.exception(e.message)
-                self.exception(request=request, message=e.message)
+                log.exception(e)
+                e = getattr(e, 'message', repr(e))
+                self.exception(request=request, message=e)
             finally:
                 self.active_request = None
+
+        log.info("Codeintel eval thread ended")
 
     @classmethod
     def registerCommandHandler(cls, handlerInstance):
@@ -754,11 +769,11 @@ class CoreHandler(CommandHandler):
         elif typ == "citadel":
             driver.send(languages=driver.mgr.get_citadel_langs())
         elif typ == "xml":
-            driver.send(languages=filter(driver.mgr.is_xml_lang,
-                                         driver.mgr.buf_class_from_lang.keys()))
+            driver.send(languages=list(filter(driver.mgr.is_xml_lang,
+                                              driver.mgr.buf_class_from_lang)))
         elif typ == "multilang":
-            driver.send(languages=filter(driver.mgr.is_multilang,
-                                         driver.mgr.buf_class_from_lang.keys()))
+            driver.send(languages=list(filter(driver.mgr.is_multilang,
+                                              driver.mgr.buf_class_from_lang)))
         elif typ == "stdlib-supported":
             driver.send(languages=self._get_stdlib_langs(driver))
         else:
@@ -826,7 +841,7 @@ class CoreHandler(CommandHandler):
         priority = request.get("priority", codeintel2.common.PRIORITY_CURRENT)
         mtime = request.get("mtime")
         if mtime is not None:
-            mtime = long(mtime)
+            mtime = int(mtime)
         def on_complete():
             driver.send(request=request,
                         status=getattr(scan_request, "status", None))
@@ -900,9 +915,9 @@ class CoreHandler(CommandHandler):
         system = set()
         datasetHandler = koXMLDatasetInfo.getService()
         for catalog in datasetHandler.resolver.catalogMap.values():
-            public.update(catalog.public.keys())
-            system.update(catalog.system.keys())
-        namespaces = datasetHandler.resolver.getWellKnownNamspaces().keys()
+            public.update(catalog.public)
+            system.update(catalog.system)
+        namespaces = datasetHandler.resolver.getWellKnownNamspaces()
         driver.send(request=request,
                     public=sorted(public),
                     system=sorted(system),
@@ -1000,10 +1015,10 @@ class Environment(codeintel2.environment.Environment):
         # Determine the prefs that were added/removed
         changed_prefs = set()
         old_keys = set(old_prefs.keys())
-        changed_prefs.update(old_keys.symmetric_difference(new_prefs.keys()))
+        changed_prefs.update(old_keys.symmetric_difference(new_prefs))
 
         # Determine the prefs that were modified
-        for key in old_keys.intersection(new_prefs.keys()):
+        for key in old_keys.intersection(new_prefs):
             if old_prefs[key] != new_prefs[key]:
                 changed_prefs.add(key)
 
@@ -1058,7 +1073,7 @@ class Environment(codeintel2.environment.Environment):
     def remove_all_pref_observers(self):
         if self._send:
             self._send(command="global-prefs-observe",
-                       remove=self._observers.keys())
+                       remove=list(self._observers.keys()))
         self._observers.clear()
 
     def _notify_pref_observers(self, name):

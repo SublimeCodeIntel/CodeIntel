@@ -2,6 +2,7 @@
 Memory reporting command handler
 """
 
+from __future__ import absolute_import
 import ctypes
 import logging
 import sys
@@ -219,7 +220,7 @@ elif sys.platform.startswith("linux"):
             try:
                 with open("/proc/self/statm", "r") as f:
                     vsize, rss = f.read().split()[:2]
-                    return long(vsize, 10) * self.libc.getpagesize()
+                    return int(vsize, 10) * self.libc.getpagesize()
             except Exception as ex:
                 log.exception("Failed to get vsize: %r", ex)
 
@@ -227,7 +228,7 @@ elif sys.platform.startswith("linux"):
             try:
                 with open("/proc/self/statm", "r") as f:
                     vsize, rss = f.read().split()[:2]
-                    return long(rss, 10) * self.libc.getpagesize()
+                    return int(rss, 10) * self.libc.getpagesize()
             except Exception as ex:
                 log.exception("Failed to get rss: %r", ex)
 

@@ -45,8 +45,9 @@
 # Limited XInclude support for the ElementTree package.
 ##
 
+from __future__ import absolute_import
 import copy
-import ElementTree
+from . import ElementTree
 
 XINCLUDE = "{http://www.w3.org/2001/XInclude}"
 

@@ -4,7 +4,7 @@ set -e -x
 cd /io/
 
 # Compile wheels
-for PYBIN in /opt/python/cp2*/bin; do
+for PYBIN in /opt/python/cp${PYTHON_VERSION}*/bin; do
     "${PYBIN}/python" setup.py bdist_wheel
 done
 

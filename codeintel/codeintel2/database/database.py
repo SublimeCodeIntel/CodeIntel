@@ -242,12 +242,13 @@ class).
   two CIX files
 """
 
+from __future__ import absolute_import
 import sys
 import os
 from os.path import (join, dirname, exists, expanduser, splitext, basename,
                      split, abspath, isabs, isdir, isfile)
-import cPickle as pickle
-from cPickle import UnpicklingError
+import six.moves.cPickle as pickle
+from six.moves.cPickle import UnpicklingError
 import threading
 import time
 from hashlib import md5
@@ -256,11 +257,10 @@ import fnmatch
 from glob import glob
 from pprint import pprint, pformat
 import logging
-from cStringIO import StringIO
+from six.moves import cStringIO as StringIO
 import codecs
 import copy
 import weakref
-import Queue
 
 import ciElementTree as ET
 from codeintel2.common import *
@@ -273,6 +273,7 @@ from codeintel2.database.catalog import CatalogsZone
 from codeintel2.database.langlib import LangZone
 from codeintel2.database.multilanglib import MultiLangZone
 from codeintel2.database.projlib import ProjectZone
+import six
 
 
 
@@ -422,7 +423,7 @@ class Database(object):
         path = join(self.base_dir, "VERSION")
         try:
             fin = open(path, 'r')
-        except EnvironmentError, ex:
+        except EnvironmentError as ex:
             return None
         try:
             return fin.read().strip()
@@ -621,7 +622,7 @@ class Database(object):
         if self.event_reporter:
             try:
                 self.event_reporter(desc)
-            except Exception, ex:
+            except Exception as ex:
                 log.exception("error calling event reporter: %s", ex)
 
     def save(self):
@@ -825,7 +826,7 @@ class Database(object):
                     in res_index.items():
                 # res_data: {lang -> blobname -> ilk -> toplevelnames}
                 for lang, blobname in (
-                     (lang, tfifb.keys()[0]) # only one blob per lang in a resource
+                     (lang, list(tfifb.keys())[0]) # only one blob per lang in a resource
                      for lang, tfifb in res_data.items()
                     ):
                     if (lang, blobname) in all_langs_and_blobnames:
@@ -962,9 +963,9 @@ class Database(object):
             yield self._catalogs_zone
         if self._stdlibs_zone:
             yield self._stdlibs_zone
-        for zone in self._lang_zone_from_lang.values()[:]:
+        for zone in list(self._lang_zone_from_lang.values()):
             yield zone
-        for zone in self._proj_zone_from_proj_path.values()[:]:
+        for zone in list(self._proj_zone_from_proj_path.values()):
             yield zone
 
     def load_blob(self, dbsubpath):
@@ -978,7 +979,7 @@ class Database(object):
             cache_key = ext[1:]
             try:
                 blob.cache[cache_key] = self.load_pickle(blob_cache_file)
-            except (UnpicklingError, ImportError), ex:
+            except (UnpicklingError, ImportError) as ex:
                 log.warn("error unpickling `%s' (skipping): %s",
                          blob_cache_file, ex)
         return blob
@@ -1016,7 +1017,7 @@ class Database(object):
                       dirname(path)[len(self.base_dir)+1:])
             try:
                 os.makedirs(dirname(path))
-            except OSError, ex:
+            except OSError as ex:
                 log.warn("error creating `%s': %s", dirname(path), ex)
         log.debug("fs-write: '%s'", path[len(self.base_dir)+1:])
         fout = open(path, 'wb')
@@ -1037,14 +1038,14 @@ class Database(object):
         This is used as the filename for the dbfile for this blob.
         """
         s = ':'.join([res_path, lang, blobname])
-        if isinstance(s, unicode):
+        if isinstance(s, six.text_type):
             s = s.encode(sys.getfilesystemencoding())
         return md5(s).hexdigest()
 
     #TODO:PERF: evaluate perf improvement with caching of this
     def dhash_from_dir(self, dir):
         """Return a hash path to use internally in the db for the given dir."""
-        if isinstance(dir, unicode):
+        if isinstance(dir, six.text_type):
             dir = dir.encode(sys.getfilesystemencoding())
         return md5(dir).hexdigest()
 

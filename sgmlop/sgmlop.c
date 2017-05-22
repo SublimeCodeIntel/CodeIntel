@@ -116,19 +116,41 @@ static char copyright[] =
 #define PyObject_GC_Del PyObject_Del
 #define PyObject_GC_Track
 #define PyObject_GC_UnTrack
-#define PyGC_HEAD_SIZE 0
 typedef int (*visitproc)(PyObject *, void *);
 typedef int (*traverseproc)(PyObject *, visitproc, void *);
 #endif
 
 #endif
 
+#ifndef PyGC_HEAD_SIZE
+#define PyGC_HEAD_SIZE 0
+#endif
 /* ==================================================================== */
 /* parser data type */
 
 /* state flags */
 #define MAYBE 1
 #define SURE 2
+
+#if PY_MAJOR_VERSION >= 3
+    #define MOD_ERROR_VAL NULL
+    #define MOD_SUCCESS_VAL(val) val
+    #define MOD_INIT(name) PyMODINIT_FUNC PyInit_##name(void)
+    #define PyInt_FromLong PyLong_FromLong
+    #define PyString_FromString PyUnicode_FromString
+    #define PyString_Check PyUnicode_Check
+    #define PyString_FromStringAndSize PyUnicode_FromStringAndSize
+    #define PyString_CheckExact PyUnicode_CheckExact
+    #define PyString_AS_STRING PyBytes_AS_STRING
+    #define PyString_GET_SIZE PyBytes_GET_SIZE
+    #define _PyString_Resize _PyBytes_Resize
+    #define PyObject_Compare(l, r) !PyObject_RichCompareBool(l, r, Py_EQ)
+#else
+    #define MOD_ERROR_VAL
+    #define MOD_SUCCESS_VAL(val)
+    #define MOD_INIT(name) void init##name(void)
+    #define _PyUnicode_AsString PyString_AS_STRING
+#endif
 
 typedef struct {
     /* well-formedness checker */
@@ -178,7 +200,7 @@ typedef struct {
 
 } FastParserObject;
 
-staticforward PyTypeObject FastParser_Type;
+static PyTypeObject FastParser_Type;
 
 /* forward declarations */
 static int fastfeed(
@@ -506,7 +528,7 @@ _sgmlop_feed(FastParserObject* self, PyObject* args)
 
     char* string;
     int stringlen;
-    if (!PyArg_ParseTuple(args, "t#", &string, &stringlen))
+    if (!PyArg_ParseTuple(args, "s#", &string, &stringlen))
         return NULL;
 
     return feed(self, string, stringlen, 0);
@@ -530,7 +552,7 @@ _sgmlop_parse(FastParserObject* self, PyObject* args)
 
     char* string;
     int stringlen;
-    if (!PyArg_ParseTuple(args, "t#", &string, &stringlen))
+    if (!PyArg_ParseTuple(args, "s#", &string, &stringlen))
         return NULL;
 
     return feed(self, string, stringlen, 1);
@@ -554,20 +576,39 @@ static PyMethodDef _sgmlop_methods[] = {
 static PyObject*  
 _sgmlop_getattr(FastParserObject* self, char* name)
 {
-    return Py_FindMethod(_sgmlop_methods, (PyObject*) self, name);
+    return PyObject_GenericGetAttr((PyObject*) self, PyUnicode_FromString(name));
 }
 
-statichere PyTypeObject FastParser_Type = {
-    PyObject_HEAD_INIT(NULL)
-    0, /* ob_size */
+static PyTypeObject FastParser_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
     "FastParser", /* tp_name */
     sizeof(FastParserObject), /* tp_size */
     0, /* tp_itemsize */
     /* methods */
-    (destructor)_sgmlop_dealloc, /* tp_dealloc */
-    0, /* tp_print */
-    (getattrfunc)_sgmlop_getattr, /* tp_getattr */
-    0, /* tp_setattr */
+    (destructor)_sgmlop_dealloc,                    /* tp_dealloc */
+    0,                                              /* tp_print */
+    (getattrfunc)_sgmlop_getattr,                   /* tp_getattr */
+    0,                                              /* tp_setattr */
+    0,                                              /* tp_reserved */
+    0,                                              /* tp_repr */
+    0,                                              /* tp_as_number */
+    0,                                              /* tp_as_sequence */
+    0,                                              /* tp_as_mapping */
+    0,                                              /* tp_hash */
+    0,                                              /* tp_call */
+    0,                                              /* tp_str */
+    0,                                              /* tp_getattro */
+    0,                                              /* tp_setattro */
+    0,                                              /* tp_as_buffer */
+    0,                                              /* tp_flags */
+    0,                                              /* tp_doc */
+    0,                                              /* tp_traverse */
+    0,                                              /* tp_clear */
+    0,                                              /* tp_richcompare */
+    0,                                              /* tp_weaklistoffset */
+    0,                                              /* tp_iter */
+    0,                                              /* tp_iternext */
+    _sgmlop_methods,                                /* tp_methods */
 };
 
 /* ==================================================================== */
@@ -579,14 +620,27 @@ static PyMethodDef _functions[] = {
     {NULL, NULL}
 };
 
-void
-#ifdef WIN32
-__declspec(dllexport)
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef _sgmlopmodule = {
+        PyModuleDef_HEAD_INIT,
+        "sgmlop",            /* m_name */
+        NULL,                /* m_doc */
+        -1,                  /* m_size */
+        _functions,          /* m_methods */
+        NULL,                /* m_reload */
+        NULL,                /* m_traverse */
+        NULL,                /* m_clear */
+        NULL                 /* m_free */
+};
 #endif
-initsgmlop(void)
+
+MOD_INIT(sgmlop)
 {
-    /* Patch object type */
-    FastParser_Type.ob_type = &PyType_Type;
+    PyObject* m;
+
+    /* Initialize object types */
+    if (PyType_Ready(&FastParser_Type) < 0)
+        return MOD_ERROR_VAL;
 
 #if defined (SGMLOP_GC)
     /* enable garbage collection for the parser object */
@@ -596,7 +650,13 @@ initsgmlop(void)
     FastParser_Type.tp_clear = (inquiry) _sgmlop_clear;
 #endif
 
-    Py_InitModule("sgmlop", _functions);
+    #if PY_MAJOR_VERSION >= 3
+        m = PyModule_Create(&_sgmlopmodule);
+    #else
+        m = Py_InitModule("sgmlop", _functions);
+    #endif
+
+    return MOD_SUCCESS_VAL(m);
 }
 
 /* -------------------------------------------------------------------- */

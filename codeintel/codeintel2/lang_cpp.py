@@ -6,160 +6,38 @@ register() function called to register this language with the system. All
 Code Intelligence for this language is controlled through this module.
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
+
 import os
-import sys
+import re
 import logging
-from collections import defaultdict
+try:
+    from string import maketrans
+except ImportError:
+    maketrans = str.maketrans
 
 import SilverCity
 from SilverCity.Lexer import Lexer
 from SilverCity import ScintillaConstants
-from codeintel2 import util
 from codeintel2.common import Trigger, TRG_FORM_CPLN, TRG_FORM_CALLTIP, TRG_FORM_DEFN, CILEDriver, Definition
 from codeintel2.citadel import CitadelLangIntel, CitadelBuffer
 from codeintel2.langintel import (ParenStyleCalltipIntelMixin,
                                   ProgLangTriggerIntelMixin)
 from codeintel2.tree import tree_from_cix
+from codeintel2.libclang import ClangCompleter
 
 # ---- globals
 
 lang = "C++"
+extraPathsPrefName = "cppExtraPaths"
+
 log = logging.getLogger("codeintel.cpp")
 # log.setLevel(logging.DEBUG)
 
-try:
-    import ycm_core
-    completer = ycm_core.ClangCompleter()
-except ImportError:
-    completer = None
-    log.warning("Module ycm_core not available. C++ requires ycmd generated ycm_core and libclang in %s", "codeintel moduel path")
 
+completer = ClangCompleter(log=log)
 
-PRAGMA_DIAG_TEXT_TO_IGNORE = '#pragma once in main file'
-TOO_MANY_ERRORS_DIAG_TEXT_TO_IGNORE = 'too many errors emitted, stopping now'
-
-
-def to_utf8(value):
-    if isinstance(value, unicode):
-        return value.encode('utf-8')
-    if isinstance(value, str):
-        return value
-    return str(value)
-
-
-def get_unsaved_files_vector(files):
-    files_vector = ycm_core.UnsavedFileVector()
-    for f in files:
-        unsaved_file = ycm_core.UnsavedFile()
-        contents = open(f).read()
-        unsaved_file.contents_ = contents
-        unsaved_file.length_ = len(contents)
-        unsaved_file.filename_ = to_utf8(f)
-        files_vector.append(unsaved_file)
-    return files_vector
-
-
-def get_flags_vector(flags):
-    flags_vector = ycm_core.StringVector()
-    for f in flags:
-        flags_vector.append(to_utf8(f))
-    return flags_vector
-
-
-def candidates_for_location_in_file(filename, line, col, flags, files=None):
-    files = set() if files is None else files
-    files.add(filename)
-    filename = to_utf8(filename)
-    files_vector = get_unsaved_files_vector(files)
-    flags_vector = get_flags_vector(flags)
-    results = completer.CandidatesForLocationInFile(
-        filename,
-        line,
-        col,
-        files_vector,
-        flags_vector,
-    )
-    return [
-        dict(
-            insertion_text=completion_data.TextToInsertInBuffer(),
-            menu_text=completion_data.MainCompletionText(),
-            extra_menu_info=completion_data.ExtraMenuInfo(),
-            kind=completion_data.kind_.name,
-            detailed_info=completion_data.DetailedInfoForPreviewWindow(),
-            extra_data={'doc_string': completion_data.DocString()} if completion_data.DocString() else None)
-        for completion_data in results]
-
-
-def run_op(op, filename, line, col, flags, files=None, reparse=True):
-    files = set() if files is None else files
-    files.add(filename)
-    filename = to_utf8(filename)
-    files_vector = get_unsaved_files_vector(files)
-    flags_vector = get_flags_vector(flags)
-    results = getattr(completer, op)(
-        filename,
-        line,
-        col,
-        files_vector,
-        flags_vector,
-        reparse,
-    )
-    if results:
-        if isinstance(results, (basestring, int, float, long, complex, list, tuple, bool)):
-            return results
-        if getattr(results, 'IsValid', lambda: True)():
-            return dict((attr.rstrip('_'), getattr(results, attr)) for attr in dir(results) if attr[0] != '_' and attr.islower())
-
-get_declaration_location = lambda *args: run_op('GetDeclarationLocation', *args)
-get_definition_location = lambda *args: run_op('GetDefinitionLocation', *args)
-get_docs_for_location_in_file = lambda *args: run_op('GetDocsForLocationInFile', *args)
-get_type_at_location = lambda *args: run_op('GetTypeAtLocation', *args)
-get_enclosing_function_at_location = lambda *args: run_op('GetEnclosingFunctionAtLocation', *args)
-get_fix_its_for_location_in_file = lambda *args: run_op('GetFixItsForLocationInFile', *args)
-
-
-def update_translation_unit(filename, flags, files=None):
-    files = set() if files is None else files
-    files.add(filename)
-    filename = to_utf8(filename)
-    files_vector = get_unsaved_files_vector(files)
-    flags_vector = get_flags_vector(flags)
-    diagnostics = completer.UpdateTranslationUnit(
-        filename,
-        files_vector,
-        flags_vector)
-    structure = defaultdict(lambda: defaultdict(list))
-    for diagnostic in diagnostics:
-        if diagnostic.text_ not in (PRAGMA_DIAG_TEXT_TO_IGNORE, TOO_MANY_ERRORS_DIAG_TEXT_TO_IGNORE):
-            structure[diagnostic.location_.filename_][diagnostic.location_.line_number_].append(diagnostic)
-    return structure
-
-
-def gen_files_under_dirs(dirs, max_depth, interesting_file_patterns=None,
-                         skip_scc_control_dirs=True):
-    from os.path import normpath, abspath, expanduser
-    from fnmatch import fnmatch
-
-    dirs_to_skip = (skip_scc_control_dirs and ["CVS", ".svn", ".hg", ".git", ".bzr"] or [])
-    walked_these_dirs = {}
-    for dir in dirs:
-        norm_dir = normpath(abspath(expanduser(dir)))
-        LEN_DIR = len(norm_dir)
-        for dirpath, dirnames, filenames in util.walk2(norm_dir):
-            if dirpath in walked_these_dirs:
-                dirnames[:] = []  # Already walked - no need to do it again.
-                continue
-            if dirpath[LEN_DIR:].count(os.sep) >= max_depth:
-                dirnames[:] = []  # hit max_depth
-            else:
-                walked_these_dirs[dirpath] = True
-                for dir_to_skip in dirs_to_skip:
-                    if dir_to_skip in dirnames:
-                        dirnames.remove(dir_to_skip)
-            if interesting_file_patterns:
-                for pat, filename in ((p, f) for p in interesting_file_patterns for f in filenames):
-                    if fnmatch(filename, pat):
-                        yield os.path.join(dirpath, filename)
 
 # ---- Lexer class
 
@@ -197,6 +75,7 @@ def gen_files_under_dirs(dirs, max_depth, interesting_file_patterns=None,
 #               # implementation.
 #           ]
 
+
 class CppLexer(Lexer):
     lang = lang
 
@@ -229,7 +108,7 @@ class CppLexer(Lexer):
 class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
                    ProgLangTriggerIntelMixin):
     lang = lang
-    extraPathsPrefName = "cppExtraPaths"
+    extraPathsPrefName = extraPathsPrefName
 
     # Used by ProgLangTriggerIntelMixin.preceding_trg_from_pos()
     calltip_trg_chars = tuple('(')
@@ -239,8 +118,8 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
     # Implicit triggering event, i.e. when typing in the editor.
     #
     def trg_from_pos(self, buf, pos, implicit=True, DEBUG=False, ac=None):
-        print "trg_from_pos"
-        print pos, implicit, ac
+        print("trg_from_pos")
+        print(pos, implicit, ac)
 
         DEBUG = True
         if pos < 1:
@@ -251,7 +130,7 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
         char = accessor.char_at_pos(last_pos)
         style = accessor.style_at_pos(last_pos)
         if DEBUG:
-            print "trg_from_pos: char: %r, style: %d" % (char, style)
+            print("trg_from_pos: char: %r, style: %d" % (char, style))
 
         if char in self.trg_chars:  # must be "complete-object-members" or None
             log.debug("  triggered 'complete-object-members'")
@@ -268,8 +147,8 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
     #
     def preceding_trg_from_pos(self, buf, pos, curr_pos,
                                preceding_trg_terminators=None, DEBUG=False):
-        print "preceding_trg_from_pos"
-        print pos, curr_pos, preceding_trg_terminators
+        print("preceding_trg_from_pos")
+        print(pos, curr_pos, preceding_trg_terminators)
 
         DEBUG = True
         if pos < 1:
@@ -280,8 +159,8 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
         char = accessor.char_at_pos(last_pos)
         style = accessor.style_at_pos(last_pos)
         if DEBUG:
-            print "pos: %d, curr_pos: %d" % (pos, curr_pos)
-            print "char: %r, style: %d" % (char, style)
+            print("pos: %d, curr_pos: %d" % (pos, curr_pos))
+            print("char: %r, style: %d" % (char, style))
 
     ##
     # Provide the list of completions or the calltip string.
@@ -289,8 +168,8 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
     #
     # Note: This example is *not* asynchronous.
     def async_eval_at_trg(self, buf, trg, ctlr):
-        print "async_eval_at_trg"
-        print trg, ctlr
+        print("async_eval_at_trg")
+        print(trg, ctlr)
 
         ctlr.start(buf, trg)
 
@@ -299,29 +178,24 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
         line += 1
         col += 1
 
-        print "line:%s, col:%s" % (line, col)
+        print("line:%s, col:%s" % (line, col))
 
         env = buf.env
-
-        flags = env.get_pref('cppFlags', ())
-
-        extra_dirs = set()
+        flags = env.get_pref('cppFlags', [])
+        extra_dirs = []
         for pref in env.get_all_prefs(self.extraPathsPrefName):
             if not pref:
                 continue
-            extra_dirs.update(d.strip() for d in pref.split(os.pathsep)
-                              if os.path.exists(d.strip()))
-
-        files = None
+            extra_dirs.extend(d.strip() for d in pref.split(os.pathsep) if os.path.exists(d.strip()) and d.strip() not in extra_dirs)
         if extra_dirs:
-            log.debug("%s extra lib dirs: %r", self.lang, extra_dirs)
-            max_depth = env.get_pref("codeintel_max_recursive_dir_depth", 10)
-            files = set(gen_files_under_dirs(extra_dirs, max_depth,
-                interesting_file_patterns=['*.c', '*.cpp', '*.cc', '*.objc', '*.objcpp', '*.m', '*.mm'],
-                skip_scc_control_dirs=True))
+            flags = flags + ['-I{}'.format(extra_dir) for extra_dir in extra_dirs]
+        flags = flags + ['-I{}'.format(os.path.dirname(filename)), '-I.']
+
+        content = buf.accessor.text
 
         if trg.form == TRG_FORM_CPLN:
-            candidates = candidates_for_location_in_file(filename, line, col, flags, files)
+            candidates = completer.getCurrentCompletions(filename, line, col, fileBuffer=content, flags=flags, include_macros=True, include_code_patterns=True, include_brief_comments=True)
+
             if not candidates:
                 ctlr.error("couldn't determine leading expression")
                 ctlr.done("error")
@@ -329,33 +203,24 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
 
             cplns = []
             for candidate in candidates:
-                cplns.append((candidate['kind'].lower(), candidate['insertion_text']))
+                cplns.append((candidate['kind'], candidate['abbr'], candidate['info']))
 
             ctlr.set_cplns(cplns)
 
         elif trg.form == TRG_FORM_DEFN:
-            defn = get_definition_location(filename, line, col, flags, files)
-            if defn and filename == defn['filename'] and line == defn['line_number']:
-                defn = None
-
-            if not defn:
-                defn = get_declaration_location(filename, line, col, flags, files)
-                if defn and filename == defn['filename'] and line == defn['line_number']:
-                    ctlr.done("success")
-                    return
+            defn = completer.gotoDeclaration(filename, line, col, fileBuffer=content, flags=flags)
+            print('defn', defn)
 
             if not defn:
                 ctlr.error("couldn't determine leading expression")
                 ctlr.done("error")
                 return
 
-            doc = get_docs_for_location_in_file(filename, line, col, flags, files)
+            # doc = get_docs_for_location_in_file(filename, line, col, flags, files)
+            # print('doc', doc)
 
-            print 'defn', defn
-            print 'doc', doc
-
-            # col = defn['column_number']
-            line = defn['line_number']
+            line = defn['line']
+            # col = defn['column']
             path = defn['filename']
             name = None
             ilk = None
@@ -370,29 +235,39 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
                 line=line,
                 ilk=ilk,
                 citdl=None,
+                doc=None,
                 signature=signature,
-                doc=doc,
             )
             ctlr.set_defns([d])
 
         elif trg.form == TRG_FORM_CALLTIP:
-            typ = get_type_at_location(filename, line, col, flags)
-            print 'typ', typ
+            prefix = self._prefix(buf.accessor.text_range(max(0, trg.pos - 200), trg.pos))
+            print('prefix', prefix)
 
-            defn = get_definition_location(filename, line, col, flags)
-            if not defn:
-                defn = get_declaration_location(filename, line, col, flags)
-            if not defn:
+            candidates = completer.getCurrentCompletions(filename, line, col, fileBuffer=content, flags=flags, prefix=prefix, include_macros=True, include_code_patterns=True, include_brief_comments=True)
+
+            if not candidates:
                 ctlr.error("couldn't determine leading expression")
                 ctlr.done("error")
                 return
 
-            print 'defn', defn
-
-            ctlr.set_calltips(['%s %s' % ('name', 'type')])
+            ctlr.set_calltips([candidate['menu'] for candidate in candidates])
             ctlr.done("success")
 
         ctlr.done("success")
+
+    def _last_logical_line(self, text):
+        lines = text.splitlines(0) or ['']
+        logicalline = lines.pop()
+        while lines and lines[-1].endswith('\\'):
+            logicalline = lines.pop()[:-1] + ' ' + logicalline
+        return logicalline
+
+    cpln_prefix_re = re.compile(r'''[-~`!@#$%^&*()=+{}[\]|\\;:'",.<>? \t]+''')
+
+    def _prefix(self, text):
+        line = self._last_logical_line(text)
+        return self.cpln_prefix_re.sub(' ', line).rstrip().rpartition(' ')[-1]
 
 
 # ---- Buffer class
@@ -441,19 +316,29 @@ class CppBuffer(CitadelBuffer):
 class CppCILEDriver(CILEDriver):
     lang = lang
     ssl_lang = lang
+    extraPathsPrefName = extraPathsPrefName
 
     def scan_purelang(self, buf):
-        print "scan_purelang(%s)" % buf.path
+        print("scan_purelang(%s)" % buf.path)
         log.info("scan '%s'", buf.path)
 
-        if sys.platform.startswith("win"):
-            path = buf.path.replace('\\', '/')
-        else:
-            path = buf.path
+        filename = buf.path
 
-        # update_translation_unit(buf.path, flags)  # FIXME
+        env = buf.env
+        flags = env.get_pref('cppFlags', [])
+        extra_dirs = []
+        for pref in env.get_all_prefs(self.extraPathsPrefName):
+            if not pref:
+                continue
+            extra_dirs.extend(d.strip() for d in pref.split(os.pathsep) if os.path.exists(d.strip()) and d.strip() not in extra_dirs)
+        if extra_dirs:
+            flags = flags + ['-I{}'.format(extra_dir) for extra_dir in extra_dirs]
+        flags = flags + ['-I{}'.format(os.path.dirname(filename)), '-I.']
 
-        output = '<file path="%s" lang="%s"></file>' % (path, lang)
+        content = buf.accessor.text
+        completer.warmupCache(buf.path, fileBuffer=content, flags=flags)
+
+        output = '<file path="%s" lang="%s"></file>' % (filename, lang)
 
         xml = '<codeintel version="2.0">\n' + output + '</codeintel>'
         return tree_from_cix(xml)

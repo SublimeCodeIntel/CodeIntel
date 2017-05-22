@@ -41,6 +41,7 @@
 # - XXX Rationalize exceptions.
 # - XXX Coding style name changes.
 
+from __future__ import absolute_import
 __all__ = [
     "Trigger", "Definition", "CILEDriver", "Evaluator",
     "EvalController", "LogEvalController",
@@ -681,7 +682,7 @@ def xmlattrstr(attrs):
     #XXX Should this be using 
     from xml.sax.saxutils import quoteattr
     s = ''
-    names = attrs.keys()
+    names = list(attrs.keys())
     names.sort() # dump attrs sorted by key, not necessary but is more stable
     for name in names:
         s += ' %s=%s' % (name, quoteattr(str(attrs[name])))

@@ -37,6 +37,7 @@
 
 """Common routines for ruby and ruby/rhtml support for CodeIntel"""
 
+from __future__ import absolute_import
 import os.path
 import logging
 

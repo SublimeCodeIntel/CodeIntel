@@ -37,11 +37,12 @@
 
 """RHTML support for CodeIntel"""
 
+from __future__ import absolute_import
 import os
 from os.path import (isfile, isdir, exists, dirname, abspath, splitext,
                      join, basename)
 import sys
-from cStringIO import StringIO
+from six.moves import cStringIO as StringIO
 import logging
 import re
 import traceback

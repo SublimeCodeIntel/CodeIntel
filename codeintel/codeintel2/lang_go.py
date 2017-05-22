@@ -2,6 +2,7 @@
 
 """Go language support for codeintel."""
 
+from __future__ import absolute_import
 import os
 import sys
 import json
@@ -59,7 +60,7 @@ except:
         predeclared_functions = set([])
         default_encoding = "utf-8"
     import styles
-    if not styles.StateMap.has_key(lang):
+    if lang not in styles.StateMap:
         map = styles.StateMap['C++'].copy()
         styles.addSharedStyles(map)
         styles.StateMap[lang] = map
@@ -296,7 +297,7 @@ class GoLangIntel(CitadelLangIntel,
             log.debug("running cmd %r", cmd)
             try:
                 p = process.ProcessOpen(cmd, cwd=cwd, env=env_vars)
-            except OSError, e:
+            except OSError as e:
                 raise CodeIntelError("Error executing '%s': %s" % (cmd, e))
             output, error = p.communicate()
             if error:
@@ -326,7 +327,7 @@ class GoLangIntel(CitadelLangIntel,
         log.debug("running [%s]", cmd)
         try:
             p = process.ProcessOpen(cmd, env=env.get_all_envvars())
-        except OSError, e:
+        except OSError as e:
             log.error("Error executing '%s': %s", cmd[0], e)
             return
 
@@ -341,7 +342,7 @@ class GoLangIntel(CitadelLangIntel,
         except IndexError:
             # exit on empty gocode output
             return
-        except ValueError, e:
+        except ValueError as e:
             log.exception('Exception while parsing json')
             return
 
@@ -445,7 +446,7 @@ class GoCILEDriver(CILEDriver):
                     log.warn("'%s' stderr: [%s]", cmd, error)
                 # Remember the executable.
                 self._gooutline_executable_and_error = (go_exe, outline_exe, None)
-            except Exception, ex:
+            except Exception as ex:
                 error_message = "Unable to compile 'outline.go'" + str(ex)
                 self._gooutline_executable_and_error = (go_exe, None, error_message)
         if self._gooutline_executable_and_error[1]:
@@ -482,7 +483,7 @@ class GoCILEDriver(CILEDriver):
 
         try:
             gooutline_exe_path = self.compile_gooutline(buf)
-        except Exception, e:
+        except Exception as e:
             log.error("Error compiling outline: %s", e)
             raise
 
@@ -491,7 +492,7 @@ class GoCILEDriver(CILEDriver):
         log.debug("running [%s]", cmd)
         try:
             p = process.ProcessOpen(cmd, env=env)
-        except OSError, e:
+        except OSError as e:
             log.error("Error executing '%s': %s", cmd, e)
             return
 

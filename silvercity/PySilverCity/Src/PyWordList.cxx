@@ -26,7 +26,7 @@ PyWordList_new(PyObject *, PyObject* args)
 
     pyWordList = PyObject_New(PyWordList, &PyWordListType);
     if (wordStr) {
-        pyWordList->wordListAsString = PyString_FromString(wordStr);
+        pyWordList->wordListAsString = PyUnicode_FromString(wordStr);
         Py_INCREF(pyWordList->wordListAsString);
     } else {
         pyWordList->wordListAsString = NULL;
@@ -47,7 +47,7 @@ PyWordList_getattr(PyWordList *self, char *name)
     if (strcmp(name, "words") == 0)
         return self->wordListAsString;
 
-    return Py_FindMethod(PyWordList_methods, (PyObject *) self, name);
+    return PyObject_GenericGetAttr((PyObject*)self, PyUnicode_FromString(name));
 }
 
 static void
@@ -59,8 +59,7 @@ PyWordList_dealloc(PyWordList* self)
 
 
 PyTypeObject PyWordListType = {
-    PyObject_HEAD_INIT(NULL)
-    0,
+    PyVarObject_HEAD_INIT(NULL, 0)
     "WordList",
     sizeof(PyWordList),
     0,
@@ -76,11 +75,24 @@ PyTypeObject PyWordListType = {
     0,                                      /*tp_hash */
     0,                                      /*tp_call*/
     0,                                      /*tp_str */
+    0,                                      /*tp_getattro*/
+    0,                                      /*tp_setattro*/
+    0,                                      /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT,                     /*tp_flags*/
+    0,                                      /*tp_doc*/
+    0,                                      /*tp_traverse*/
+    0,                                      /*tp_clear*/
+    0,                                      /*tp_richcompare*/
+    0,                                      /*tp_weaklistoffset*/
+    0,                                      /*tp_iter*/
+    0,                                      /*tp_iternext*/
+    PyWordList_methods,                     /*tp_methods*/
 };
-
 
 void
 initPyWordList(void)
 {
-    PyWordListType.ob_type = &PyType_Type;
+    /* Initialize object types */
+    if (PyType_Ready(&PyWordListType) < 0)
+        return;
 }

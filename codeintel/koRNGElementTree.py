@@ -34,6 +34,8 @@
 # 
 # ***** END LICENSE BLOCK *****
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 from xml.dom import pulldom
 import logging
@@ -69,7 +71,7 @@ class rng_base_dataset:
 
     def resolveRefs(self, dataset):
         for ref in self.refs[:]:
-            if ref not in dataset.defs.keys():
+            if ref not in list(dataset.defs.keys()):
                 if ref not in dataset.ref_unresolved:
                     dataset.ref_unresolved[ref] = []
                 dataset.ref_unresolved[ref].append(self)
@@ -115,7 +117,7 @@ class rng_dataset(rng_base_dataset):
         self.resolveUnresolvedRefs()
 
     def resolveCircularRefs(self):
-        for ref in self.ref_circular.keys()[:]:
+        for ref in list(self.ref_circular.keys()):
             #print "resolving earlier circular reference %s"%ref
             el = self.ref_circular[ref]
             del self.ref_circular[ref]
@@ -123,8 +125,8 @@ class rng_dataset(rng_base_dataset):
                 e.resolveRefs(self)
 
     def resolveUnresolvedRefs(self):
-        for ref in self.ref_unresolved.keys()[:]:
-            print "resolving earlier unresolved reference %s"%ref
+        for ref in list(self.ref_unresolved.keys()):
+            print("resolving earlier unresolved reference %s"%ref)
             el = self.ref_unresolved[ref]
             del self.ref_unresolved[ref]
             for e in el:
@@ -160,20 +162,20 @@ class rng_dataset(rng_base_dataset):
         return []
     
     def all_element_types(self):
-        return self.all_elements.keys()
+        return list(self.all_elements.keys())
 
 
     def dump(self, stream):
-        print "RNG NS: %s" % self.xmlns
-        print "Namespace: %s" % self.namespace
-        print "datatypeLibrary: %s" % self.datatypeLibrary
-        print "-"*60
+        print("RNG NS: %s" % self.xmlns)
+        print("Namespace: %s" % self.namespace)
+        print("datatypeLibrary: %s" % self.datatypeLibrary)
+        print("-"*60)
         for e in self.elements:
             e.dump(stream)
-        print "-"*60
+        print("-"*60)
         for e in self.all_elements.values():
             e.dump(stream)
-        print "-"*60
+        print("-"*60)
 
 class rng_node_info(rng_base_dataset):
     def __init__(self, node):

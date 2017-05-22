@@ -38,6 +38,7 @@
 langinfo_*.py files.
 """
 
+from __future__ import absolute_import
 import re
 from langinfo import LangInfo
 
@@ -47,7 +48,7 @@ class MakefileLangInfo(LangInfo):
     name = "Makefile"
     conforms_to_bases = ["Text"]
     exts = [".mak"]
-    filename_patterns = [re.compile(r'^[Mm]akefile.*$')]
+    filename_patterns = [re.compile(br'^[Mm]akefile.*$')]
 
 class CMakeLangInfo(LangInfo):
     name = "CMake"
@@ -64,7 +65,7 @@ class _CSSLangInfoCommon(LangInfo):
     # I.e., look for:
     #   @charset "<IANA defined charset name>";
     # at the start of the CSS document.
-    encoding_decl_pattern = re.compile(r'\A@charset "(?P<encoding>[\w-]+)";')
+    encoding_decl_pattern = re.compile(br'\A@charset "(?P<encoding>[\w-]+)";')
 
 class CSSLangInfo(_CSSLangInfoCommon):
     name = "CSS"
@@ -82,7 +83,7 @@ class SassLangInfo(_CSSLangInfoCommon):
     name = "Sass"
     exts = [".sass", ".css.sass"]
     section_regexes = [
-        ("production", re.compile(r"^(\w\S+?),?", re.M)),
+        ("production", re.compile(br"^(\w\S+?),?", re.M)),
     ]
 
 

@@ -14,6 +14,8 @@
 
 # It's an error for a valid file to score hits for both Python2 and 3.
 
+from __future__ import absolute_import
+from __future__ import print_function
 import sys
 import re
 import token
@@ -31,7 +33,7 @@ class _FileWrapper(object):
         self.f = sys.stdin
         
     def set_text(self, text):
-        from cStringIO import StringIO
+        from six.moves import cStringIO as StringIO
         self.f = StringIO(text)
 
     def readline(self):
@@ -86,7 +88,7 @@ def at_stmt_end(token_type, token_string):
     
 def safe_get_next_token(tokenizer):
     try:
-        return tokenizer.next()
+        return next(tokenizer)
     except (tokenize.TokenError, IndentationError):
         log.debug("problem getting next token")
         raise StopIteration
@@ -460,11 +462,11 @@ def foo():
 """
         f.set_text(code)
         # f.set_stdin()
-        print _calc_py2_py3_scores(f)
+        print(_calc_py2_py3_scores(f))
     else:
         import os
         for path in sys.argv[1:]:
             if not os.path.isfile(path):
                 continue
             f.set_file(path)
-            print "%s: %r" % (path, _calc_py2_py3_scores(f))
+            print("%s: %r" % (path, _calc_py2_py3_scores(f)))

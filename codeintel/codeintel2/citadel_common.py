@@ -36,6 +36,7 @@
 
 """Common definitions for the Citadel parts of codeintel."""
 
+from __future__ import absolute_import
 import os
 import sys
 from hashlib import md5

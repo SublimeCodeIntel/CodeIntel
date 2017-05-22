@@ -57,9 +57,11 @@
 # how unreliable it is on your Python version).
 ##
 
+from __future__ import absolute_import
+from __future__ import print_function
 import xmllib, string
 
-import ElementTree
+from . import ElementTree
 
 ##
 # ElementTree builder for XML source data.
@@ -71,8 +73,8 @@ class TreeBuilder(xmllib.XMLParser):
     def __init__(self, html=0):
         self.__builder = ElementTree.TreeBuilder()
         if html:
-            import htmlentitydefs
-            self.entitydefs.update(htmlentitydefs.entitydefs)
+            from six.moves import html_entities
+            self.entitydefs.update(html_entities.entitydefs)
         xmllib.XMLParser.__init__(self)
 
     ##
@@ -136,9 +138,9 @@ if __name__ == "__main__":
         status.append("default namespace applied to unqualified attribute")
     # report bugs
     if status:
-        print "xmllib doesn't work properly in this Python version:"
+        print("xmllib doesn't work properly in this Python version:")
         for bug in status:
-            print "-", bug
+            print("-", bug)
     else:
-        print "congratulations; no problems found in xmllib"
+        print("congratulations; no problems found in xmllib")
 

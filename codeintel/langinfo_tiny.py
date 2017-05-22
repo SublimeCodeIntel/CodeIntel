@@ -40,6 +40,7 @@ Examples are one-off file types (specific to some software project or something)
 specific config files, etc.
 """
 
+from __future__ import absolute_import
 from langinfo import LangInfo
 
 

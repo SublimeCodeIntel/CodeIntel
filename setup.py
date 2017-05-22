@@ -169,17 +169,32 @@ sgmlop_ext = Extension(
 
 ########################################################################
 # cElementTree (it's in PyPI, but unpatched, this one is patched)
+# ciElementTree (it's not in PyPI)
 
 celementtree_include_dirs = [
-    'cElementTree',
-    'cElementTree/expat',
+    'xElementTree/src',
+    'xElementTree/src/expat',
 ]
 celementtree_ext = Extension(
-    'codeintel.cElementTree', [
-        'cElementTree/cElementTree.c',
-        'cElementTree/expat/xmlparse.c',
-        'cElementTree/expat/xmlrole.c',
-        'cElementTree/expat/xmltok.c',
+    'codeintel.cElementTree._cElementTree', [
+        'xElementTree/src/_cElementTree.c',
+        'xElementTree/src/expat/xmlparse.c',
+        'xElementTree/src/expat/xmlrole.c',
+        'xElementTree/src/expat/xmltok.c',
+    ],
+    define_macros=[
+        ('XML_STATIC', None),
+        ('HAVE_MEMMOVE', None),
+    ],
+    include_dirs=celementtree_include_dirs,
+)
+
+cielementtree_ext = Extension(
+    'codeintel.ciElementTree._ciElementTree', [
+        'xElementTree/src/_ciElementTree.c',
+        'xElementTree/src/expat/xmlparse.c',
+        'xElementTree/src/expat/xmlrole.c',
+        'xElementTree/src/expat/xmltok.c',
     ],
     define_macros=[
         ('XML_STATIC', None),
@@ -189,39 +204,23 @@ celementtree_ext = Extension(
 )
 
 ########################################################################
-# ciElementTree (it's not in PyPI)
-
-cielementtree_include_dirs = [
-    'ciElementTree',
-    'ciElementTree/expat',
-]
-cielementtree_ext = Extension(
-    'codeintel.ciElementTree', [
-        'ciElementTree/cElementTree.c',
-        'ciElementTree/expat/xmlparse.c',
-        'ciElementTree/expat/xmlrole.c',
-        'ciElementTree/expat/xmltok.c',
-    ],
-    define_macros=[
-        ('XML_STATIC', None),
-        ('HAVE_MEMMOVE', None),
-    ],
-    include_dirs=cielementtree_include_dirs,
-)
-
-########################################################################
 # codeintel
 
 install_requires = [
+    'apsw',
+    'chardet',
+    'inflector',
     'six',
     'zope.cachedescriptors',
-    'inflector',
-    'apsw',
 ]
 
-if sys.platform != 'win32':
-    # subprocess32 is not available for windows
-    install_requires.append('subprocess32')
+if sys.version_info[0] == 2:
+    install_requires.append('clang')
+    if sys.platform != 'win32':
+        # subprocess32 is not available for windows
+        install_requires.append('subprocess32')
+else:
+    install_requires.append('libclang-py3')
 
 setup(
     name="CodeIntel",
@@ -235,21 +234,27 @@ Go, JavaScript, Mason, XBL, XUL, RHTML, SCSS, Python, HTML, Ruby, Python3, XML,
 Sass, XSLT, Django, HTML5, Perl, CSS, Twig, Less, Smarty, Node.js, Tcl,
 TemplateToolkit, PHP.""",
     author="Komodo Edit Team",
-    author_email="german.mb@gmail.com",
-    license="GPL",
+    maintainer="German Mendez Bravo (Kronuz)",
+    maintainer_email="german.mb@gmail.com",
+    license="MPL 1.1",
     classifiers=[
         # License should match "license" above.
-        "License :: OSI Approved :: GNU General Public License (GPL)",
+        "License :: OSI Approved :: Mozilla Public License 1.1 (MPL 1.1)",
         # How mature is this project? Common values are
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         "Programming Language :: Python",
         "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.3",
+        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
     ],
     keywords='codeintel intellisense autocomplete ide languages python go javascript mason xbl xul rhtml scss python html ruby python3 xml sass xslt django html5 perl css twig less smarty node tcl templatetoolkit php',
     install_requires=install_requires,
@@ -260,7 +265,7 @@ TemplateToolkit, PHP.""",
         sgmlop_ext,
     ],
     entry_points={
-        'console_scripts': ['codeintel = codeintel:main'],
+        'console_scripts': ['codeintel = codeintel.__main__:main'],
     },
     packages=[
         'codeintel',
@@ -269,12 +274,16 @@ TemplateToolkit, PHP.""",
         'codeintel.codeintel2.database',
         'codeintel.elementtree',
         'codeintel.SilverCity',
+        'codeintel.cElementTree',
+        'codeintel.ciElementTree',
     ],
-    package_data={'codeintel.codeintel2': [
-        'lexers/*.lexres',
-        'catalogs/*.cix',
-        'stdlibs/*.cix',
-        'golib/*.go',
-        'lib_srcs/*/*/*',
-    ]},
+    package_data={
+        'codeintel.codeintel2': [
+            'lexers/*.lexres',
+            'catalogs/*.cix',
+            'stdlibs/*.cix',
+            'golib/*.go',
+            'lib_srcs/*/*/*',
+        ],
+    },
 )

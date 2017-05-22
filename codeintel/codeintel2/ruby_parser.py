@@ -39,6 +39,8 @@
 
 """Ruby parsing support for codeintel/rubycile.py"""
 
+from __future__ import absolute_import
+from __future__ import print_function
 import string
 import sys
 import re
@@ -189,7 +191,7 @@ lang_specific_classes = {"Ruby": RubyClassifier,
                          "RHTML" : UDLClassifier}
 
 def remove_hashes(lines):
-    return map(lambda s: _leading_hash_re.sub("", s), lines)
+    return [_leading_hash_re.sub("", s) for s in lines]
 
 class RailsMigrationData:    
     def __init__(self):
@@ -1281,5 +1283,5 @@ if __name__ == "__main__":
     tokenizer = ruby_lexer.RubyLexer(sample_code)
     parser = Parser(tokenizer, "Ruby")
     tree = parser.parse()
-    print "Analyze the parse tree"
+    print("Analyze the parse tree")
     tree.dump()

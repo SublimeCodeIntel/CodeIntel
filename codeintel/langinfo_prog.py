@@ -36,6 +36,7 @@
 
 """LangInfo definitions for some programming languages."""
 
+from __future__ import absolute_import
 import re
 from langinfo import LangInfo
 
@@ -47,7 +48,7 @@ class _PythonCommonLangInfo(LangInfo):
     conforms_to_bases = ["Text"]
     exts = ['.py', '.pyw']
     # http://www.python.org/dev/peps/pep-0263/
-    encoding_decl_pattern = re.compile(r"coding[:=]\s*(?P<encoding>[-\w.]+)")
+    encoding_decl_pattern = re.compile(br'^[ \t\v]*#.*?coding[:=][ \t]*(?P<encoding>[-_.a-zA-Z0-9]+)')
 
 # Where there's a conflict in extensions, put the main
 # LangInfo entry last.
@@ -55,14 +56,14 @@ class PythonLangInfo(_PythonCommonLangInfo):
     name = "Python"
     default_encoding = "ascii"  #TODO: link to ref defining default encoding
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*python(?!3).*$', re.I | re.M))
+        (0, "regex", re.compile(br'\A#!.*python(?!3).*$', re.I | re.M))
     ]
 
 class Python3LangInfo(_PythonCommonLangInfo):
     name = "Python3"
     default_encoding = "utf-8"
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*python3.*$', re.I | re.M))
+        (0, "regex", re.compile(br'\A#!.*python3.*$', re.I | re.M))
     ]
     is_minor_variant = PythonLangInfo
 
@@ -75,7 +76,7 @@ class PerlLangInfo(LangInfo):
     conforms_to_bases = ["Text"]
     exts = ['.pl', '.pm', '.t']
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*perl.*$', re.I | re.M)),
+        (0, "regex", re.compile(br'\A#!.*perl.*$', re.I | re.M)),
     ]
     filename_patterns = ["Construct", "Conscript"] # Cons make-replacement tool files
 
@@ -90,7 +91,7 @@ class PerlLangInfo(LangInfo):
     #   use encoding::source "<encoding-name>";
     #   "This is like the encoding pragma, but done right."
     encoding_decl_pattern = re.compile(
-        r"""use\s+encoding(?:::source)?\s+(['"])(?P<encoding>[\w-]+)\1""")
+        br"""use\s+encoding(?:::source)?\s+(['"])(?P<encoding>[\w-]+)\1""")
 
 
 class PHPLangInfo(LangInfo):
@@ -99,8 +100,8 @@ class PHPLangInfo(LangInfo):
     exts = [".php", ".inc",
             ".phtml"]  # .phtml commonly used for Zend Framework view files
     magic_numbers = [
-        (0, "string", "<?php"),
-        (0, "regex", re.compile(r'\A#!.*php.*$', re.I | re.M)),
+        (0, "string", b'<?php'),
+        (0, "regex", re.compile(br'\A#!.*php.*$', re.I | re.M)),
     ]
     #TODO: PHP files should inherit the HTML "<meta> charset" check
     #      and the XML prolog encoding check.
@@ -138,13 +139,13 @@ class TclLangInfo(LangInfo):
     conforms_to_bases = ["Text"]
     exts = ['.tcl']
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*(tclsh|wish|expect).*$', re.I | re.M)),
+        (0, "regex", re.compile(br'\A#!.*(tclsh|wish|expect).*$', re.I | re.M)),
         # As suggested here: http://www.tcl.tk/man/tcl8.4/UserCmd/tclsh.htm
         # Make sure we properly catch shebang lines like this:
         #   #!/bin/sh
         #   # the next line restarts using tclsh \
         #   exec tclsh "$0" "$@"
-        (0, "regex", re.compile(r'\A#!.*^exec [^\r\n|\n|\r]*?(tclsh|wish|expect)',
+        (0, "regex", re.compile(br'\A#!.*^exec [^\r\n|\n|\r]*?(tclsh|wish|expect)',
                                 re.I | re.M | re.S)),
     ]
     _magic_number_precedence = ("Bourne shell", -1) # check before "Bourne shell"
@@ -155,7 +156,7 @@ class RubyLangInfo(LangInfo):
     exts = ['.rb', '.mab', '.ru']
     filename_patterns = ["Rakefile"]
     magic_numbers = [
-        (0, "regex", re.compile('\A#!.*ruby.*$', re.I | re.M)),
+        (0, "regex", re.compile(br'\A#!.*ruby.*$', re.I | re.M)),
     ]
     #TODO: http://blade.nagaokaut.ac.jp/cgi-bin/scat.rb/ruby/ruby-core/12900
     #      Ruby uses similar (same?) coding decl as Python.
@@ -164,7 +165,7 @@ class _JSLikeLangInfo(LangInfo):
     conforms_to_bases = ["Text"]
     # Support for Node (server side JavaScript).
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*node.*$', re.I | re.M))
+        (0, "regex", re.compile(br'\A#!.*node.*$', re.I | re.M))
     ]
 
     # These are the keywords that are used in most JavaScript environments.
@@ -542,14 +543,14 @@ class BashLangInfo(LangInfo):
     exts = [".sh"]
     filename_patterns = [".bash_profile", ".bashrc", ".bash_logout"]
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*/\bbash\b$', re.I | re.M)),
+        (0, "regex", re.compile(br'\A#!.*/\bbash\b$', re.I | re.M)),
     ]
 
 class SHLangInfo(LangInfo):
     name = "Bourne shell"
     conforms_to_bases = ["Text"]
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*/\bsh\b$', re.I | re.M)),
+        (0, "regex", re.compile(br'\A#!.*/\bsh\b$', re.I | re.M)),
     ]
     
 
@@ -557,7 +558,7 @@ class TCSHLangInfo(LangInfo):
     name = "tcsh"
     conforms_to_bases = ["Text"]
     magic_numbers = [
-        (0, "regex", re.compile(r'\A#!.*/\btcsh\b$', re.M)),
+        (0, "regex", re.compile(br'\A#!.*/\btcsh\b$', re.M)),
     ]
     filename_patterns = ["csh.cshrc", "csh.login", "csh.logout",
                          ".tcshrc", ".cshrc", ".login", ".logout"]

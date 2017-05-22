@@ -37,6 +37,7 @@
 
 """Completion evaluation code for PHP"""
 
+from __future__ import absolute_import
 from codeintel2.common import *
 from codeintel2.tree import TreeEvaluator
 from codeintel2.util import make_short_name_dict, banner
@@ -838,7 +839,7 @@ class PHPTreeEvaluator(TreeEvaluator):
                            elem_ilk, classref)
                 try:
                     subhit = self._hit_from_citdl(classref, scoperef)
-                except CodeIntelError, ex:
+                except CodeIntelError as ex:
                     # Continue with what we *can* resolve.
                     self.warn(str(ex))
                 else:
@@ -947,7 +948,7 @@ class PHPTreeEvaluator(TreeEvaluator):
                                 remaining_tokens = [remaining_tokens[-1]]
                                 new_hit, nconsumed = self._hit_from_getattr(remaining_tokens, *hit)
                     remaining_tokens = remaining_tokens[nconsumed:]
-                except CodeIntelError, ex:
+                except CodeIntelError as ex:
                     self.debug("error %s", ex)
                 if new_hit:
                     new_hits.append(new_hit)
@@ -1330,7 +1331,7 @@ class PHPTreeEvaluator(TreeEvaluator):
                                                 tokens, blob, (blob, []))
                             if hit:
                                 return hit, nconsumed
-                        except CodeIntelError, e:
+                        except CodeIntelError as e:
                             self.debug("_hit_from_elem_imports:: "
                                        "_hit_from_getattr could not resolve: "
                                        "%r on %r", tokens, blob)
@@ -1367,7 +1368,7 @@ class PHPTreeEvaluator(TreeEvaluator):
                         try:
                             if hit and self._return_with_hit(hit, 1):
                                 return hit, nconsumed
-                        except CodeIntelError, e:
+                        except CodeIntelError as e:
                             self.debug("_hit_from_elem_imports:: ie: "
                                        "_hit_from_getattr could not resolve: "
                                        "%r on %r", tokens, blob)
@@ -1454,7 +1455,7 @@ class PHPTreeEvaluator(TreeEvaluator):
                                      '.'.join(tokens[:nconsumed]), scoperef,
                                      hit[0])
                             return hit, nconsumed
-                    except CodeIntelError, e:
+                    except CodeIntelError as e:
                         pass # don't freak out: we'll try the next classref
         elif ilk == "blob":
             attr = elem.names.get(first_token)
@@ -1686,7 +1687,7 @@ class PHPTreeEvaluator(TreeEvaluator):
         # we don't get a recursive import situation
         imported_blobs = {}
         self._get_all_import_blobs_dict_for_elem(elem, imported_blobs)
-        blobs = imported_blobs.values()
+        blobs = list(imported_blobs.values())
         self.debug("_get_all_import_blobs_for_elem:: Imported blobs: %r", blobs)
         return blobs
 

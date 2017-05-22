@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import webbrowser
 import tempfile
 import sys
 import SilverCity
 import os
-import urllib
+from six.moves import urllib
 from SilverCity import LanguageInfo
 
 xhtml_prefix = \
@@ -141,7 +143,7 @@ def generate_html(
         target_file = open(target_file_name, 'w')
 
     if not css:
-        css = 'file:' + urllib.pathname2url(
+        css = 'file:' + urllib.request.pathname2url(
             SilverCity.get_default_stylesheet_location())
     
     if source_file_name is not None:
@@ -170,27 +172,27 @@ def generate_html(
 if __name__ == "__main__":
     args = sys.argv[1:]
     if (args == 0) or ("--help" in args) or ("-help" in args):
-        print usage
+        print(usage)
         sys.exit(0)
 
     switches, other_args = collect_options(args)
-    if switches.has_key('list-generators'):
+    if 'list-generators' in switches:
         lexers = LanguageInfo.get_generator_names_descriptions()
         lexers.sort()
-        print "\nGenerator Options:"
+        print("\nGenerator Options:")
         for name, description in lexers:
-            print "  --generator=%s (%s)" % (name, description)
-        print
+            print("  --generator=%s (%s)" % (name, description))
+        print()
         sys.exit(0)
         
-    if switches.has_key('clip'):
+    if 'clip' in switches:
         html_args = {}
         del switches['clip']
     elif len(other_args) > 0:
         html_args = {'source_file_name' : other_args[0]}
         other_args = other_args[1:]
     else:
-        print usage
+        print(usage)
         sys.exit(1)
         
     if len(other_args) == 0:
@@ -198,7 +200,7 @@ if __name__ == "__main__":
     elif len(other_args) == 1:
         html_args.update({'target_file_name' : other_args[0]})
     else:
-        print usage
+        print(usage)
         sys.exit(1)
 
     html_args.update(switches)

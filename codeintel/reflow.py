@@ -94,12 +94,15 @@ u'The other instances\nin Homer of double\nnames in the\nlanguage of men and\ngo
 u'abcdefgh1 abcdefgh2\nabcdefgh3\xa0abcdefgh4\xa0abcdefgh5\nabcdefgh6'
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
 import re
 import sys
+import six
 
 TABWIDTH = 8
 
-class Line(unicode):
+class Line(six.text_type):
     r"""Line objects are "smart" wrappers around lines.  They know about
     all of the indentation-related semantics of the line, such as:
       - whether the line is all whitespace or not
@@ -141,7 +144,7 @@ class Line(unicode):
     [2, 4]
     """
     def __init__(self, line):
-        unicode.__init__(line)
+        six.text_type.__init__(line)
         self._line = line
         self.iswhitespace = not line.strip()
         self.indentWidths = []
@@ -171,13 +174,13 @@ class Line(unicode):
         return line
     def _strip(self):
         if self.iscode:
-            return unicode(self)
+            return six.text_type(self)
         if self.bulleted:
             return self[len(self.bullet):].rstrip()
         else:
             return self[len(self.leadingIndent):].rstrip()
     def __str__(self):
-        return unicode(self._line)
+        return six.text_type(self._line)
 
 bulletRe = re.compile("(\s*?[\*%-]\s+)(.*)")
 
@@ -574,7 +577,7 @@ def htmlify(text):
 
 def _test():
     import doctest, reflow
-    print "...testing doctests..."
+    print("...testing doctests...")
     return doctest.testmod(reflow)
 
 if __name__ == '__main__':
