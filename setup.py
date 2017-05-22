@@ -235,21 +235,24 @@ Go, JavaScript, Mason, XBL, XUL, RHTML, SCSS, Python, HTML, Ruby, Python3, XML,
 Sass, XSLT, Django, HTML5, Perl, CSS, Twig, Less, Smarty, Node.js, Tcl,
 TemplateToolkit, PHP.""",
     author="Komodo Edit Team",
-    author_email="german.mb@gmail.com",
-    license="GPL",
+    maintainer="German Mendez Bravo (Kronuz)",
+    maintainer_email="german.mb@gmail.com",
+    license="MPL 1.1",
     classifiers=[
         # License should match "license" above.
-        "License :: OSI Approved :: GNU General Public License (GPL)",
+        "License :: OSI Approved :: Mozilla Public License 1.1 (MPL 1.1)",
         # How mature is this project? Common values are
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         "Programming Language :: Python",
         "Programming Language :: Python :: 2",
+        "Programming Language :: Python :: 2.6",
         "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 2 :: Only",
     ],
     keywords='codeintel intellisense autocomplete ide languages python go javascript mason xbl xul rhtml scss python html ruby python3 xml sass xslt django html5 perl css twig less smarty node tcl templatetoolkit php',
     install_requires=install_requires,

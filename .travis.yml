@@ -1,3 +1,7 @@
+branches:
+  only:
+  - /^v[0-9]/
+
 language: python
 
 cache:
@@ -5,8 +9,24 @@ cache:
   - "$HOME/.cache/pip"
   - "$HOME/.pyenv"
 
+env:
+  global:
+    # travis encrypt PYPIPASSWORD=secret_password --add env.global
+    secure: ggV2/f4LBr78bvBS4osuXIK7QvLFnPpZ6U4FDFLU6EbTxseg+mkcLqefeNsU7wzUyAJHIu6G/0ZHu5lGANNEPhL4Nkchb0WXIxCNreBfoHDoF93yLm+WCRrDLj4AlZETaaHnW3515KYoYll7b/U32vhMXN7E1s75+O3j6SEuwTMVW6hVwmqg865pOAcVVV3KCTh7Nm+uy3NzbO5QiTvI8yEgizBm2Q9972jK6fTHmX/UZZ7kuZSIh4Iy9Bm7ONcHwZdaSSDeWQOXU0WD2e6AyjJbqrp9ba7GKhaVET4dPjjRHx/QzIUFXlH2bnSKh2JsqLoca2zMyOmRgXUDAWdbO/qAsZgQwSZCIQgjRTjUEPJEUs7wJlqP+7a4Gk23qSMj+lxuP+shW+/yBoG7jW9Fh/pKGgRLwvVrGtf86aIuAPTqqODqQJ7b2rwfErE7eyutyvmALaOdByxsVe/ijewzva6mbnH0kddCW+jOZanWWsSvt/aXYCaLtvjPOW4cBTJnGN68OBjf+99dJep+oLsbfQNmjE92YqPRjB2FjOA+QJeuCGLi9bFDZJMjrq80+a3wy9zJX6Eyy0fILNSMsInz98T0eu5A5ZZoJTjCV7fB54KOYMeP3fFeRz4ZG1J64frowPHXBLz2R3sFBP49lXiSDvLT91/B+ydLEEs/O5V0F1w=
+
 matrix:
   include:
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
+
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_i686
+           DOCKER_PRE_CMD=linux32
+
     - os: linux
       dist: trusty
       python: '2.6'
@@ -25,43 +45,43 @@ matrix:
     # - os: linux
     #   dist: trusty
     #   python: '3.6'
-    - os: linux
-      dist: trusty
-      python: pypy
+    # - os: linux
+    #   dist: trusty
+    #   python: pypy
+
     - os: osx
+      osx_image: xcode8.3  # OS X 10.12
       language: objective-c
       env: PYENV_VERSION=2.7.12
+    - os: osx
+      osx_image: xcode7.3  # OS X 10.11
+      language: objective-c
+      env: PYENV_VERSION=2.7.12
+    - os: osx
+      osx_image: xcode6.4  # OS X 10.10
+      language: objective-c
+      env: PYENV_VERSION=2.7.12
+
     # - os: osx
+    #   osx_image: xcode8.3  # OS X 10.12
     #   language: objective-c
     #   env: PYENV_VERSION=3.5.2
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_i686
-           PRE_CMD=linux32
+    # - os: osx
+    #   osx_image: xcode7.3  # OS X 10.11
+    #   language: objective-c
+    #   env: PYENV_VERSION=3.5.2
+    # - os: osx
+    #   osx_image: xcode6.4  # OS X 10.10
+    #   language: objective-c
+    #   env: PYENV_VERSION=3.5.2
 
 install:
-  - if [[ "$DOCKER_IMAGE" != "" ]]; then docker pull $DOCKER_IMAGE; fi
+  - if [[ "$DOCKER_IMAGE" != "" ]]; then docker pull ${DOCKER_IMAGE}; fi
 
 script:
-  - if [[ "$DOCKER_IMAGE" != "" ]]; then docker run --rm -v `pwd`:/io $DOCKER_IMAGE $PRE_CMD /io/.travis/manylinux-build.sh; else travis_retry python setup.py bdist_wheel; fi
-  - ls dist/
+  - if [[ "$DOCKER_IMAGE" != "" ]]; then docker run --rm -v `pwd`:/io ${DOCKER_IMAGE} ${DOCKER_PRE_CMD} /io/.travis/manylinux-build.sh; fi
+  - if [[ "$DOCKER_IMAGE" == "" ]]; then pip install wheel && python setup.py bdist_wheel; fi
 
-artifacts:
-  # bdist_wheel puts your built wheel in the dist directory
-  - path: dist/*
-
-# deploy:
-#   provider: releases
-#   api_key:
-#     secure: QiadMGAmtPw+Ut7LWqa3U/tImPIgiPH79mM9o8DGBckcacp9HkDYvCGuOjs5hZbCBBuQ6IAkikotS8iCSwHey1GK9jSDbpgKvVGiACdp8HNhitY8V/S3e1UukDlMeu+Q7vCJtynSGX0BJuiOQB8ZQyQ2HEZ7kMQgTLCEO1Uljhc=
-#   file: dist/*.whl
-#   file_glob: true
-#   on:
-#     repo: Kronuz/CodeIntel
-#     tags: true
-#   skip_cleanup: true
+after_success:
+  - ls -la dist/
+  - if [[ "$TRAVIS_TAG" != "" ]]; then pip install twine && for file in dist/*; do python -m twine upload -u Kronuz -p ${PYPIPASSWORD} "${file}"; done; fi
