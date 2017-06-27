@@ -940,7 +940,8 @@ class Parser:
         # I.e. when parsing "XML/Simple.pm" the blob name is "Simple", but we
         #      need it be "XML::Simple" in this case. The bestPackageName is
         #      used to find the best matching name.
-        packages = sorted(x for x in self.moduleInfo.modules.keys() if x != 'main', sorter1)
+        keys = (x for x in self.moduleInfo.modules.keys() if x != 'main')
+        packages = sorted(keys, sorter1)
         bestPackageName = None
         for k in packages:
             modInfo = innerModules[k]

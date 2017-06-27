@@ -8,7 +8,9 @@ Code Intelligence for this language is controlled through this module.
 
 from __future__ import absolute_import
 from __future__ import print_function
+
 import os
+import re
 import logging
 try:
     from string import maketrans
@@ -18,13 +20,12 @@ except ImportError:
 import SilverCity
 from SilverCity.Lexer import Lexer
 from SilverCity import ScintillaConstants
-from codeintel2.common import Trigger, TRG_FORM_CPLN, TRG_FORM_CALLTIP, TRG_FORM_DEFN, CILEDriver, Definition, CodeIntelError
+from codeintel2.common import Trigger, TRG_FORM_CPLN, TRG_FORM_CALLTIP, TRG_FORM_DEFN, CILEDriver, Definition
 from codeintel2.citadel import CitadelLangIntel, CitadelBuffer
 from codeintel2.langintel import (ParenStyleCalltipIntelMixin,
                                   ProgLangTriggerIntelMixin)
 from codeintel2.tree import tree_from_cix
 from codeintel2.libclang import ClangCompleter
-import six
 
 # ---- globals
 
@@ -262,12 +263,11 @@ class CppLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
             logicalline = lines.pop()[:-1] + ' ' + logicalline
         return logicalline
 
-    cpln_prefix_chars = "~`!@#$%^&*()-=+{}[]|\\;:'\",.<>? \t"
-    cpln_prefix_trans = maketrans(cpln_prefix_chars, ' ' * len(cpln_prefix_chars))
+    cpln_prefix_re = re.compile(r'''[-~`!@#$%^&*()=+{}[\]|\\;:'",.<>? \t]+''')
 
     def _prefix(self, text):
         line = self._last_logical_line(text)
-        return line.translate(self.cpln_prefix_trans).rstrip().rpartition(' ')[-1]
+        return self.cpln_prefix_re.sub(' ', line).rstrip().rpartition(' ')[-1]
 
 
 # ---- Buffer class
