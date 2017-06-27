@@ -4,6 +4,7 @@
 
 """A hook handler for supporting Zend Framework."""
 
+from __future__ import absolute_import
 import os
 import sys
 import logging

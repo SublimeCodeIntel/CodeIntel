@@ -44,10 +44,13 @@ limitations, bugs, and having a better code design (i.e. where lang-specific
 quirks can be dealt with cleanly).
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
 import sys
 from os.path import normpath
 import logging
 import re
+import six
 
 import ciElementTree as ET
 if not getattr(ET, "_patched_for_komodo_", False):
@@ -214,7 +217,7 @@ def tree_from_cix(cix):
 
     Raises pyexpat.ExpatError if the CIX content could not be parsed.
     """
-    if isinstance(cix, unicode):
+    if isinstance(cix, six.text_type):
         cix = cix.encode("UTF-8", "xmlcharrefreplace")
     tree = ET.XML(cix)
     version = tree.get("version")
@@ -333,7 +336,7 @@ class TreeEvaluator(CitadelEvaluator):
                 if defns:
                     self.ctlr.set_defns(defns)
             self.ctlr.done("success")
-        except CodeIntelError, ex:
+        except CodeIntelError as ex:
             #XXX Should we have an error handling hook here?
             self.ctlr.error("evaluating %s: %s", self, ex)
             self.ctlr.done("eval error")
@@ -550,7 +553,7 @@ class TreeEvaluator(CitadelEvaluator):
                 #    importing the module.
                 try:
                     module = self._resolve_import(module_name)
-                except CodeIntelError, ex: # use equivalent of NoModuleEntry?
+                except CodeIntelError as ex: # use equivalent of NoModuleEntry?
                     self.warn("could not resolve '%s' import to handle <%s>",
                               module_name, self.str_import(imp))
                     return None
@@ -703,7 +706,7 @@ def _dump_element(elem, indent=''):
     This is only useful for debugging.
     """
     s = "%selement '%s': %s" % (indent, elem.tag, elem.attrib)
-    print s
+    print(s)
     for child in elem:
         _dump_element(child, indent+'  ')
 

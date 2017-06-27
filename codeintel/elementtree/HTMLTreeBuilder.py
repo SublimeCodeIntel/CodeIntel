@@ -49,11 +49,13 @@
 # Tools to build element trees from HTML files.
 ##
 
-import htmlentitydefs
+from __future__ import absolute_import
+from six.moves import html_entities
 import re, string, sys
 import mimetools, StringIO
 
-import ElementTree
+from . import ElementTree
+import six
 
 AUTOCLOSE = "p", "li", "tr", "th", "td", "head", "body"
 IGNOREEND = "img", "hr", "meta", "link", "br"
@@ -64,7 +66,7 @@ else:
     is_not_ascii = re.compile(eval(r'u"[\u0080-\uffff]"')).search
 
 try:
-    from HTMLParser import HTMLParser
+    from six.moves.html_parser import HTMLParser
 except ImportError:
     from sgmllib import SGMLParser
     # hack to use sgmllib's SGMLParser to emulate 2.2's HTMLParser
@@ -179,7 +181,7 @@ class HTMLTreeBuilder(HTMLParser):
     # (Internal) Handles entity references.
 
     def handle_entityref(self, name):
-        entity = htmlentitydefs.entitydefs.get(name)
+        entity = html_entities.entitydefs.get(name)
         if entity:
             if len(entity) == 1:
                 entity = ord(entity)
@@ -198,7 +200,7 @@ class HTMLTreeBuilder(HTMLParser):
     def handle_data(self, data):
         if isinstance(data, type('')) and is_not_ascii(data):
             # convert to unicode, but only if necessary
-            data = unicode(data, self.encoding, "ignore")
+            data = six.text_type(data, self.encoding, "ignore")
         self.__builder.data(data)
 
     ##

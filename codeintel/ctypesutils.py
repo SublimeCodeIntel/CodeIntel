@@ -37,6 +37,7 @@
 # Put pywin32 replacement code here that can use pure ctypes,
 # no dependencies on wnd or comtypes
 
+from __future__ import absolute_import
 from ctypes import *
 from ctypes.wintypes import *
 

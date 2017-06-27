@@ -169,17 +169,18 @@ sgmlop_ext = Extension(
 
 ########################################################################
 # cElementTree (it's in PyPI, but unpatched, this one is patched)
+# ciElementTree (it's not in PyPI)
 
 celementtree_include_dirs = [
-    'cElementTree',
-    'cElementTree/expat',
+    'xElementTree/src',
+    'xElementTree/src/expat',
 ]
 celementtree_ext = Extension(
-    'codeintel.cElementTree', [
-        'cElementTree/cElementTree.c',
-        'cElementTree/expat/xmlparse.c',
-        'cElementTree/expat/xmlrole.c',
-        'cElementTree/expat/xmltok.c',
+    'codeintel.cElementTree._cElementTree', [
+        'xElementTree/src/_cElementTree.c',
+        'xElementTree/src/expat/xmlparse.c',
+        'xElementTree/src/expat/xmlrole.c',
+        'xElementTree/src/expat/xmltok.c',
     ],
     define_macros=[
         ('XML_STATIC', None),
@@ -188,25 +189,18 @@ celementtree_ext = Extension(
     include_dirs=celementtree_include_dirs,
 )
 
-########################################################################
-# ciElementTree (it's not in PyPI)
-
-cielementtree_include_dirs = [
-    'ciElementTree',
-    'ciElementTree/expat',
-]
 cielementtree_ext = Extension(
-    'codeintel.ciElementTree', [
-        'ciElementTree/cElementTree.c',
-        'ciElementTree/expat/xmlparse.c',
-        'ciElementTree/expat/xmlrole.c',
-        'ciElementTree/expat/xmltok.c',
+    'codeintel.ciElementTree._ciElementTree', [
+        'xElementTree/src/_ciElementTree.c',
+        'xElementTree/src/expat/xmlparse.c',
+        'xElementTree/src/expat/xmlrole.c',
+        'xElementTree/src/expat/xmltok.c',
     ],
     define_macros=[
         ('XML_STATIC', None),
         ('HAVE_MEMMOVE', None),
     ],
-    include_dirs=cielementtree_include_dirs,
+    include_dirs=celementtree_include_dirs,
 )
 
 ########################################################################
@@ -219,9 +213,13 @@ install_requires = [
     'apsw',
 ]
 
-if sys.platform != 'win32':
-    # subprocess32 is not available for windows
-    install_requires.append('subprocess32')
+if sys.version_info[0] == 2:
+    install_requires.append('clang')
+    if sys.platform != 'win32':
+        # subprocess32 is not available for windows
+        install_requires.append('subprocess32')
+else:
+    install_requires.append('libclang-py3')
 
 setup(
     name="CodeIntel",
@@ -263,7 +261,7 @@ TemplateToolkit, PHP.""",
         sgmlop_ext,
     ],
     entry_points={
-        'console_scripts': ['codeintel = codeintel:main'],
+        'console_scripts': ['codeintel = codeintel.__main__:main'],
     },
     packages=[
         'codeintel',
@@ -272,12 +270,16 @@ TemplateToolkit, PHP.""",
         'codeintel.codeintel2.database',
         'codeintel.elementtree',
         'codeintel.SilverCity',
+        'codeintel.cElementTree',
+        'codeintel.ciElementTree',
     ],
-    package_data={'codeintel.codeintel2': [
-        'lexers/*.lexres',
-        'catalogs/*.cix',
-        'stdlibs/*.cix',
-        'golib/*.go',
-        'lib_srcs/*/*/*',
-    ]},
+    package_data={
+        'codeintel.codeintel2': [
+            'lexers/*.lexres',
+            'catalogs/*.cix',
+            'stdlibs/*.cix',
+            'golib/*.go',
+            'lib_srcs/*/*/*',
+        ],
+    },
 )

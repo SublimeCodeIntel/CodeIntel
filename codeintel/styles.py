@@ -34,6 +34,7 @@
 # 
 # ***** END LICENSE BLOCK *****
 
+from __future__ import absolute_import
 CommonStates = [
     'default', 'comments', 'numbers', 'strings', 'keywords',
     'classes', 'functions', 'operators', 'identifiers',

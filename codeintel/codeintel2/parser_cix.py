@@ -42,6 +42,7 @@
 # parser_data.py
 # 
 
+from __future__ import absolute_import
 import os
 from os.path import basename, splitext, isfile, isdir, join
 
@@ -152,7 +153,7 @@ def get_vars_cix(parse_tree_node, cix_node):
 def common_module_class_cix(parse_tree_node, cix_node, class_ref_fn=None, **additional_attrs):
     attrs = get_common_attrs(parse_tree_node)
     attrs.update(additional_attrs)
-    if not attrs.has_key('ilk'):
+    if 'ilk' not in attrs:
         attrs['ilk'] = 'class'
     class_cix_node = SubElement(cix_node, 'scope', **attrs)
     get_docstring_cix(parse_tree_node, class_cix_node)

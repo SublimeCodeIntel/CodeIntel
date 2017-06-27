@@ -37,6 +37,7 @@
 
 """NodeJS support for CodeIntel"""
 
+from __future__ import absolute_import
 import os
 import sys
 import json
@@ -186,7 +187,7 @@ class NodeJSTreeEvaluator(JavaScriptTreeEvaluator):
                         self.log("found module via %r, trying %r",
                                  manifest_path, main_path)
                         hits = load_as_file(main_path)
-                except ValueError, e:
+                except ValueError as e:
                     self.log("Error loading %r: %r", manifest_path, e)
                 finally:
                     manifest_file.close()

@@ -37,11 +37,13 @@
 
 r"""Basic text manipulation utilities."""
 
+from __future__ import absolute_import
 import os
 import sys
 import re
 from pprint import pprint
 import logging
+import six
 
 
 
@@ -71,7 +73,7 @@ def escaped_text_from_text(text, escapes="eol"):
     # - Add _escaped_html_from_text() with a similar call sig.
     import re
     
-    if isinstance(escapes, basestring):
+    if isinstance(escapes, six.string_types):
         if escapes == "eol":
             escapes = {'\r\n': "\\r\\n\r\n", '\n': "\\n\n", '\r': "\\r\r"}
         elif escapes == "whitespace":
@@ -86,7 +88,7 @@ def escaped_text_from_text(text, escapes="eol"):
 
     # Sort longer replacements first to allow, e.g. '\r\n' to beat '\r' and
     # '\n'.
-    escapes_keys = escapes.keys()
+    escapes_keys = list(escapes.keys())
     try:
         escapes_keys.sort(key=lambda a: len(a), reverse=True)
     except TypeError:
@@ -141,7 +143,7 @@ def break_up_words(text, max_word_length=50):
     splitter = u"\u200b" # zero-width space
     if isinstance(text, str):
         try:
-            text = unicode(text)
+            text = six.text_type(text)
         except UnicodeDecodeError:
             splitter = " " # ASCII space
     for bit in re.split(r"(\s+)", text, re.UNICODE):

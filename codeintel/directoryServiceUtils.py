@@ -37,10 +37,11 @@
 """utility functions to make using nsIDirectoryService a little easier.
 """
 
+from __future__ import absolute_import
 import os
 import sys
 from xpcom import components, COMException, _xpcom
-import ConfigParser
+import six.moves.configparser
 
 Cc = components.classes
 Ci = components.interfaces

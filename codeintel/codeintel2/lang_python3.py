@@ -4,6 +4,7 @@
 
 """Python 3 support for CodeIntel"""
 
+from __future__ import absolute_import
 import logging
 
 from codeintel2.common import LazyClassAttribute

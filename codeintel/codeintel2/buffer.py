@@ -35,6 +35,7 @@
 # 
 # ***** END LICENSE BLOCK *****
 
+from __future__ import absolute_import
 import os
 from os.path import dirname, join, abspath, normpath, basename
 import sys
@@ -43,7 +44,7 @@ import operator
 import bisect
 from pprint import pprint, pformat
 import logging
-from cStringIO import StringIO
+from six.moves import cStringIO as StringIO
 import traceback
 from hashlib import md5
 import time
@@ -365,7 +366,6 @@ class Buffer(object):
             "do_eval" (optional, default False) indicates that completion
                 eval should be done.
         """
-        from cStringIO import StringIO
         html = StringIO()
         
         if include_html:
@@ -489,7 +489,7 @@ div.code .tags        { color: red; }
                 if do_trg:
                     try:
                         trg = self.trg_from_pos(token["start_index"] + i)
-                    except CodeIntelError, ex:
+                    except CodeIntelError as ex:
                         html.write(self._html_from_trg_error(ex))
                     else:
                         if trg is not None:
@@ -547,7 +547,7 @@ div.code .tags        { color: red; }
         except (EvalError, NotImplementedError,
                 #XXX Eventually citdl evaluation shouldn't use
                 #    codeintel2.CodeIntelError.
-                CodeIntelError), ex:
+                CodeIntelError) as ex:
             classes.append("trg-evalerror")
             result = _htmlescape(traceback.format_exc(), whitespace=True)
         else:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import absolute_import
 import sys
 if sys.platform.startswith("win"):
     def namer():

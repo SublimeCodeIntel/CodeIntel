@@ -103,19 +103,49 @@ static PyMethodDef moduleMethods[] =
 extern "C"
 {
 
-#ifdef WIN32
-_declspec(dllexport) 
+
+#if PY_MAJOR_VERSION >= 3
+    #define MOD_ERROR_VAL NULL
+    #define MOD_SUCCESS_VAL(val) val
+    #define MOD_INIT(name) PyMODINIT_FUNC PyInit_##name(void)
+#else
+    #define MOD_ERROR_VAL
+    #define MOD_SUCCESS_VAL(val)
+    #define MOD_INIT(name) void init##name(void)
 #endif
-void
-init_SilverCity(void)
-{ 
+
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef moduledef = {
+        PyModuleDef_HEAD_INIT,
+        MODULE_NAME,         /* m_name */
+        module_doc,          /* m_doc */
+        -1,                  /* m_size */
+        moduleMethods,       /* m_methods */
+        NULL,                /* m_reload */
+        NULL,                /* m_traverse */
+        NULL,                /* m_clear */
+        NULL                 /* m_free */
+};
+#endif
+
+MOD_INIT(_SilverCity)
+{
     PyObject * m;
 
-    m = Py_InitModule3(MODULE_NAME, moduleMethods, module_doc);
+    #if PY_MAJOR_VERSION >= 3
+        m = PyModule_Create(&moduledef);
+    #else
+        m = Py_InitModule3(MODULE_NAME, moduleMethods, module_doc);
+    #endif
+
+    if (!m)
+        return MOD_ERROR_VAL;
+
     (void) PyModule_GetDict(m);
 
     initPyLexState();
     initPyPropSet();
     initPyWordList();
+    return MOD_SUCCESS_VAL(m);
 }
 }

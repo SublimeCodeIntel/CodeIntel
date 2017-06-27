@@ -2,6 +2,7 @@
 CSS 3 definitions - requires CSS 1 module.
 """
 
+from __future__ import absolute_import
 import textwrap
 
 from codeintel2.constants_css1 import CSS_ATTR_DICT as CSS1_ATTR_DICT

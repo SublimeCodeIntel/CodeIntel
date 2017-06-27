@@ -40,6 +40,9 @@
 lexer-based styled buffers.
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
+from __future__ import division
 import bisect
 import math
 import re
@@ -49,6 +52,8 @@ from SilverCity import ScintillaConstants
 
 from codeintel2.common import *
 from codeintel2 import util
+import six
+from six.moves import range
 
 if _xpcom_:
     from xpcom import components
@@ -152,21 +157,37 @@ class SilverCityAccessor(Accessor):
         """A backdoor specific to this accessor to allow the equivalent of
         updating the buffer/file/content.
         """
-        if isinstance(content, unicode):
-            content = content.encode("utf-8")
-        self.content = content
+        if isinstance(content, six.text_type):
+            self.content = content
+        else:
+            self.content = content.decode("utf-8")
         self.__tokens_cache = None
         self.__position_data_cache = None
 
     __tokens_cache = None
+
     @property
     def tokens(self):
         if self.__tokens_cache is None:
             self.__tokens_cache = self.lexer.tokenize_by_style(self.content)
         return self.__tokens_cache
 
-    def char_at_pos(self, pos):
-        return self.content[pos]
+    def _char_pos_from_byte_pos(self, byte_pos):
+        line = self.line_from_pos(byte_pos)
+        byte_offset, char_offset = self.__position_data[line][:2]
+        next_byte_offset = (byte_offset + len(self.content[char_offset].encode("utf-8")))
+        try:
+            while next_byte_offset <= byte_pos:
+                byte_offset = next_byte_offset
+                char_offset += 1
+                next_byte_offset += len(self.content[char_offset].encode("utf-8"))
+        except IndexError:
+            pass  # running past EOF
+        return char_offset
+
+    def char_at_pos(self, byte_pos):
+        char_pos = self._char_pos_from_byte_pos(byte_pos)
+        return self.content[char_pos]
 
     def _token_at_pos(self, pos):
         #XXX Locality of reference should offer an optimization here.
@@ -180,13 +201,13 @@ class SilverCityAccessor(Accessor):
         # iterations.  Enforce that in case we have an issue and hit an infinite
         # loop.
         for iter_count in range(int(math.ceil(math.log(upper, 2)) + 1)):
-            idx = ((upper - lower) / 2) + lower
+            idx = ((upper - lower) // 2) + lower
             if idx >= len(self.tokens):
                 return self.tokens[-1]
             token = self.tokens[idx]
-            #print "_token_at_pos %d: token idx=%d text[%d:%d]=%r"\
+            #print("_token_at_pos %d: token idx=%d text[%d:%d]=%r"\
             #      % (pos, idx, token["start_index"], token["end_index"],
-            #         token["text"])
+            #         token["text"]))
             start, end = token["start_index"], token["end_index"]
             if pos < token["start_index"]:
                 upper = idx
@@ -206,11 +227,9 @@ class SilverCityAccessor(Accessor):
         byte_offset, char_offset = self.__position_data[line][:2]
 
         line_char_offset = char_offset
-        assert isinstance(self.content, str), \
-            "codeintel should be internally UTF-8"
         try:
             while byte_offset < pos:
-                byte_offset += len(self.content[char_offset])
+                byte_offset += len(self.content[char_offset].encode("utf-8"))
                 char_offset += 1
         except IndexError:
             char_offset += 1 # EOF
@@ -228,10 +247,8 @@ class SilverCityAccessor(Accessor):
             yield (self.char_at_pos(pos), self.style_at_pos(pos))
 
     def match_at_pos(self, pos, s):
-        assert not isinstance(s, unicode), "codeintel should be internally utf8"
-        if isinstance(s, unicode):
-            s = s.encode("utf-8")
-        return self.content[pos:pos+len(s)] == s
+        char_pos = self._char_pos_from_byte_pos(pos)
+        return self.content[char_pos:char_pos+len(s)] == s
 
     __position_data_cache = None
     @property
@@ -242,16 +259,28 @@ class SilverCityAccessor(Accessor):
         """
         if self.__position_data_cache is None:
             data = []
-            offset = 0
-            for match in re.finditer("\r\n|\r|\n", self.content):
-                end = match.end()
-                data.append((offset, end - offset))
-                offset = end
-            data.append((offset, len(self.content) - offset))
+            byte_offset = 0
+            char_offset = 0
+            for match in re.finditer(r"\r\n|\r|\n", self.content):
+                char_end = match.end()
+                char_length = char_end - char_offset
+                line = self.content[char_offset:char_end]
+                byte_length = len(line.encode("utf-8"))
+                data.append((byte_offset, char_offset, byte_length, char_length))
+                byte_offset += byte_length
+                char_offset += char_length
+                assert char_offset == char_end
             self.__position_data_cache = data
         return self.__position_data_cache
 
-    def line_from_pos(self, pos):
+    def lines_from_char_positions(self, starts):
+        """Yield the 0-based lines given the *character* positions."""
+        line_starts = [p[1] for p in self.__position_data]  # in chars
+        for char_pos in starts:
+            # see line_from_pos for the adjustments
+            yield bisect.bisect_left(line_starts, char_pos + 1) - 1
+
+    def line_from_pos(self, byte_pos):
         r"""
             >>> sa = SilverCityAccessor(lexer,
             ...         #0         1           2         3
@@ -277,20 +306,26 @@ class SilverCityAccessor(Accessor):
         # the +1 is to make sure we get the line after (so we can subtract it)
         # this is because for a position not at line start, we get the next line
         # instead.
-        return bisect.bisect_left(self.__position_data, (pos + 1,)) - 1
+        return bisect.bisect_left(self.__position_data, (byte_pos + 1,)) - 1
 
     def line_start_pos_from_pos(self, pos):
         return self.__position_data[self.line_from_pos(pos)][0]
     def pos_from_line_and_col(self, line, col):
-        return self.__position_data[line][0] + col
+        byte_offset, char_offset = self.__position_data[line][:2]
+        substring = self.content[char_offset:char_offset+col].encode("utf-8")
+        return byte_offset + len(substring)
 
     @property
     def text(self):
         return self.content
     def text_range(self, start, end):
-        return self.content[start:end]
+        return self.content[self._char_pos_from_byte_pos(start):
+                            self._char_pos_from_byte_pos(end)]
+
     def length(self):
-        return len(self.content)
+        byte_offset, byte_length = self.__position_data[-1][::2]
+        return byte_offset + byte_length
+
     def gen_tokens(self):
         for token in self.tokens:
             yield token
@@ -440,11 +475,11 @@ class SciMozAccessor(Accessor):
                 yield (None, 0, length)
                 break
             start = max(start-1, 0)
-            #print "range: %d (%r) - %d (%r): %s" % (
+            #print("range: %d (%r) - %d (%r): %s" % (
             #    start, scimoz.getWCharAt(start),
             #    end, scimoz.getWCharAt(end-1),
-            #    self._udl_family_from_style(scimoz.getStyleAt(pos)))
-            #print util.indent(repr(scimoz.getTextRange(start, end)))
+            #    self._udl_family_from_style(scimoz.getStyleAt(pos))))
+            #print(util.indent(repr(scimoz.getTextRange(start, end))))
             yield (self._udl_family_from_style(scimoz.getStyleAt(pos)),
                    start, end)
             pos = end + 1
@@ -521,9 +556,9 @@ class AccessorCache:
             self._cachePos += extendCount
             self._cacheFirstBufPos = start
             if self._debug:
-                print "Extended cache by %d, _cachePos: %d, len now: %d" % (
-                    extendCount, self._cachePos, len(self._chCache))
-                print "Ch cache now: %r" % (self._chCache)
+                print("Extended cache by %d, _cachePos: %d, len now: %d" % (
+                    extendCount, self._cachePos, len(self._chCache)))
+                print("Ch cache now: %r" % (self._chCache))
         else:
             raise IndexError("No buffer left to examine")
 
@@ -545,32 +580,32 @@ class AccessorCache:
                 self._styleCache.append(style)
             self._cacheLastBufPos = end
             if self._debug:
-                print "Extended cache by %d, _cachePos: %d, len now: %d" % (
-                    extendCount, self._cachePos, len(self._chCache))
-                print "Ch cache now: %r" % (self._chCache)
+                print("Extended cache by %d, _cachePos: %d, len now: %d" % (
+                    extendCount, self._cachePos, len(self._chCache)))
+                print("Ch cache now: %r" % (self._chCache))
         else:
             raise IndexError("No buffer left to examine")
 
     # Public
     def dump(self, limit=20):
         if len(self._chCache) > 0:
-            print "  pos: %r, ch: %r, style: %r, cachePos: %r, cache len: %d\n  cache: %r" % (self._cachePos + self._cacheFirstBufPos,
+            print("  pos: %r, ch: %r, style: %r, cachePos: %r, cache len: %d\n  cache: %r" % (self._cachePos + self._cacheFirstBufPos,
                                                              self._chCache[self._cachePos],
                                                              self._styleCache[self._cachePos],
                                                              self._cachePos,
                                                              len(self._chCache),
-                                                             self._chCache)
+                                                             self._chCache))
         else:
-            print "New cache: %r" % (self._chCache[-limit:])
+            print("New cache: %r" % (self._chCache[-limit:]))
 
     def setCacheFetchSize(self, size):
         self._cachefetchsize = size
 
     def resetToPosition(self, position):
         if self._debug:
-            print "resetToPosition: %d" % (position)
-            print "self._cacheFirstBufPos: %d" % (self._cacheFirstBufPos)
-            print "self._cacheLastBufPos: %d" % (self._cacheLastBufPos)
+            print("resetToPosition: %d" % (position))
+            print("self._cacheFirstBufPos: %d" % (self._cacheFirstBufPos))
+            print("self._cacheLastBufPos: %d" % (self._cacheLastBufPos))
         if position >= self._cacheLastBufPos:
             if position >= self._cacheLastBufPos + self._cachefetchsize:
                 # Clear everything
@@ -579,7 +614,7 @@ class AccessorCache:
             else:
                 # Just extend forwards
                 if self._debug:
-                    print "resetToPosition: extending cache forwards"
+                    print("resetToPosition: extending cache forwards")
                 self._extendCacheForwards()
         elif position < self._cacheFirstBufPos:
             if position < self._cacheFirstBufPos - self._cachefetchsize:
@@ -589,7 +624,7 @@ class AccessorCache:
             else:
                 # Just extend back
                 if self._debug:
-                    print "resetToPosition: extending cache backwards"
+                    print("resetToPosition: extending cache backwards")
                 self._extendCacheBackwards()
         else:
             # It's in the current cache area, we keep that then
@@ -599,8 +634,8 @@ class AccessorCache:
         self._style = self._styleCache[self._cachePos]
         self._pos = position
         if self._debug:
-            print "self._cachePos: %d, cacheLen: %d" % (self._cachePos, len(self._chCache))
-            print "resetToPosition: p: %r, ch: %r, st: %r" % (self._pos, self._ch, self._style)
+            print("self._cachePos: %d, cacheLen: %d" % (self._cachePos, len(self._chCache)))
+            print("resetToPosition: p: %r, ch: %r, st: %r" % (self._pos, self._ch, self._style))
 
     #def pushBack(self, numPushed=1):
     #    """Push back the items that were recetly popped off.
@@ -643,7 +678,7 @@ class AccessorCache:
             return (None, None, None)
         self._pos = self._cachePos + self._cacheFirstBufPos
         if self._debug:
-            print "getPrevPosCharStyle:: pos:%d ch:%r style:%d" % (self._pos, self._ch, self._style)
+            print("getPrevPosCharStyle:: pos:%d ch:%r style:%d" % (self._pos, self._ch, self._style))
         return (self._pos, self._ch, self._style)
 
     def peekPrevPosCharStyle(self, ignore_styles=None, max_look_back=100):
@@ -671,7 +706,7 @@ class AccessorCache:
             cache_extended_by = old_cacheFirstBufPos - self._cacheFirstBufPos
             self._cachePos = old_cachePos + cache_extended_by
         if self._debug:
-            print "peekPrevPosCharStyle:: pos:%d ch:%r style:%d" % (pos, ch, style)
+            print("peekPrevPosCharStyle:: pos:%d ch:%r style:%d" % (pos, ch, style))
         return (pos, ch, style)
 
     def getPrecedingPosCharStyle(self, current_style=None, ignore_styles=None,
@@ -704,7 +739,7 @@ class AccessorCache:
         new_p, c, style = self.getPrecedingPosCharStyle(current_style,
                                                         ignore_styles,
                                                         max_look_back=max_text_len)
-        #print "Return %d:%d" % (new_p, old_p+1)
+        #print("Return %d:%d" % (new_p, old_p+1))
         if style is None:   # Ran out of text to look at
             new_p = max(0, old_p - max_text_len)
             return new_p, self.text_range(new_p, old_p+1)
@@ -734,7 +769,7 @@ class AccessorCache:
             return (None, None, None)
         self._pos = self._cachePos + self._cacheFirstBufPos
         if self._debug:
-            print "getNextPosCharStyle:: pos:%d ch:%r style:%d" % (self._pos, self._ch, self._style)
+            print("getNextPosCharStyle:: pos:%d ch:%r style:%d" % (self._pos, self._ch, self._style))
         return (self._pos, self._ch, self._style)
 
     def getSucceedingPosCharStyle(self, current_style=None, ignore_styles=None,
@@ -784,11 +819,11 @@ class AccessorCache:
             cstart = start - self._cacheFirstBufPos
             cend = end - self._cacheFirstBufPos
             if self._debug:
-                print "text_range:: cstart: %d, cend: %d" % (cstart, cend)
-                print "text_range:: start: %d, end %d" % (start, end)
-                print "text_range:: _cacheFirstBufPos: %d, _cacheLastBufPos: %d" % (self._cacheFirstBufPos, self._cacheLastBufPos)
+                print("text_range:: cstart: %d, cend: %d" % (cstart, cend))
+                print("text_range:: start: %d, end %d" % (start, end))
+                print("text_range:: _cacheFirstBufPos: %d, _cacheLastBufPos: %d" % (self._cacheFirstBufPos, self._cacheLastBufPos))
             # It's all in the cache
             return "".join(self._chCache[cstart:cend])
         if self._debug:
-            print "text_range:: using parent text_range: %r - %r" % (start, end)
+            print("text_range:: using parent text_range: %r - %r" % (start, end))
         return self._accessor.text_range(start, end)

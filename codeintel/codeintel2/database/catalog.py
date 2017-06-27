@@ -39,12 +39,13 @@
 See the database/database.py module docstring for an overview.
 """
 
+from __future__ import absolute_import
 import sys
 import os
 from os.path import (join, dirname, exists, expanduser, splitext, basename,
                      split, abspath, isabs, isdir, isfile, normpath,
                      normcase)
-import cPickle as pickle
+import six.moves.cPickle as pickle
 import threading
 import time
 from hashlib import md5
@@ -53,11 +54,10 @@ import fnmatch
 from glob import glob
 from pprint import pprint, pformat
 import logging
-from cStringIO import StringIO
+from six.moves import cStringIO as StringIO
 import codecs
 import copy
 import weakref
-import Queue
 
 import ciElementTree as ET
 from codeintel2.common import *
@@ -66,6 +66,7 @@ from codeintel2.util import dedent, safe_lang_from_lang, banner, hotshotit
 from codeintel2.tree import tree_from_cix_path
 from codeintel2.database.util import filter_blobnames_for_prefix
 from codeintel2.database.resource import AreaResource
+import six
 
 
 
@@ -157,7 +158,7 @@ class CatalogsZone(object):
             in self._selection_from_selector(selections).items():
             try:
                 res_ids += self._res_ids_from_selector_cache[selector]
-            except KeyError, ex:
+            except KeyError as ex:
                 missing_selections.append(selection)
         log.debug("_res_ids_from_selections: res_ids=%r", res_ids)
         return tuple(res_ids), missing_selections
@@ -172,7 +173,7 @@ class CatalogsZone(object):
         return self._catalog_dirs
     @catalog_dirs.setter
     def catalog_dirs(self, value):
-        assert not isinstance(value, basestring), \
+        assert not isinstance(value, six.string_types), \
             "catalog_dirs must be an iterable, not a string"
         catalog_dirs = list(value)
         if self._std_catalog_dir not in catalog_dirs:
@@ -183,7 +184,7 @@ class CatalogsZone(object):
 
     def get_lib(self, lang, selections=None):
         """Return a CatalogLib for the given lang and selections."""
-        assert not isinstance(selections, basestring),\
+        assert not isinstance(selections, six.string_types),\
             "catalog lib 'selections' must be None or a sequence, not %r: %r"\
             % (type(selections), selections)
         if not self._have_updated_at_least_once:
@@ -330,7 +331,7 @@ class CatalogsZone(object):
                     elif elem.tag == "file":
                         lang = elem.get("lang")
                         break
-            except ET.XMLParserError, ex:
+            except ET.XMLParserError as ex:
                 log.warn("%s: error reading catalog, skipping it (%s)",
                          cix_path, ex)
                 continue
@@ -406,7 +407,7 @@ class CatalogsZone(object):
                 # remove this obsolete CIX file
                 try:
                     todos.append( ("remove", AreaResource(res_area_path), res_name) )
-                except ValueError, ex:
+                except ValueError as ex:
                     # Skip resources in unknown areas. This is primarily to
                     # allow debugging/testing (when the set of registered
                     # path_areas may not include the set when running in
@@ -455,7 +456,7 @@ class CatalogsZone(object):
                         #    more intelligently if possible.
                         self._remove_res(res)
                         self._add_res(res)
-                except DatabaseError, ex:
+                except DatabaseError as ex:
                     log.warn("%s (skipping)" % ex)
     
             if progress_cb:
@@ -514,7 +515,7 @@ class CatalogsZone(object):
                         log.debug("fs-write: remove catalog %s blob file '%s'",
                                   lang, basename(path))
                         os.remove(path)
-                except EnvironmentError, ex:
+                except EnvironmentError as ex:
                     #XXX If get lots of these, then try harder. Perhaps
                     #    creating a zombies area, or creating a list of
                     #    them: self.db.add_zombie(dbpath).
@@ -526,14 +527,14 @@ class CatalogsZone(object):
                 # Update 'toplevel*_index' for $lang.
                 # toplevelname_index:   {lang -> ilk -> toplevelname -> res_id -> blobnames}
                 # toplevelprefix_index: {lang -> ilk -> prefix -> res_id -> toplevelnames}
-                for ilk, toplevelnames in toplevelnames_from_ilk.iteritems():
+                for ilk, toplevelnames in six.iteritems(toplevelnames_from_ilk):
                     try:
                         bfrft = self.toplevelname_index[lang][ilk]
                         for toplevelname in toplevelnames:
                             del bfrft[toplevelname][res_id]
                             if not bfrft[toplevelname]:
                                 del bfrft[toplevelname]
-                    except KeyError, ex:
+                    except KeyError as ex:
                         self.db.corruption("CatalogsZone._remove_res",
                             "error removing top-level names of ilk '%s' for "
                                 "'%s' resource from toplevelname_index: %s"
@@ -547,7 +548,7 @@ class CatalogsZone(object):
                             del tfrfp[prefix][res_id]
                             if not tfrfp[prefix]:
                                 del tfrfp[prefix]
-                    except KeyError, ex:
+                    except KeyError as ex:
                         self.db.corruption("CatalogsZone._remove_res",
                             "error removing top-level name of ilk '%s' for "
                                 "'%s' resource from toplevelprefix_index: %s"
@@ -560,7 +561,7 @@ class CatalogsZone(object):
         cix_path = res.path
         try:
             tree = tree_from_cix_path(cix_path)
-        except ET.XMLParserError, ex:
+        except ET.XMLParserError as ex:
             log.warn("could not load `%s' into catalog (skipping): %s",
                      cix_path, ex)
             return
@@ -579,7 +580,7 @@ class CatalogsZone(object):
             tfifb = res_data.setdefault(lang, {})
             toplevelnames_from_ilk = tfifb.setdefault(blobname, {})
             if lang in self.db.import_everything_langs:
-                for toplevelname, elem in blob.names.iteritems():
+                for toplevelname, elem in six.iteritems(blob.names):
                     ilk = elem.get("ilk") or elem.tag
                     if ilk not in toplevelnames_from_ilk:
                         toplevelnames_from_ilk[ilk] = set([toplevelname])
@@ -591,7 +592,7 @@ class CatalogsZone(object):
             # toplevelprefix_index: {lang -> ilk -> prefix -> res_id -> toplevelnames}
             bfrftfi = self.toplevelname_index.setdefault(lang, {})
             tfrfpfi = self.toplevelprefix_index.setdefault(lang, {})
-            for ilk, toplevelnames in toplevelnames_from_ilk.iteritems():
+            for ilk, toplevelnames in six.iteritems(toplevelnames_from_ilk):
                 bfrft = bfrftfi.setdefault(ilk, {})
                 tfrfp = tfrfpfi.setdefault(ilk, {})
                 for toplevelname in toplevelnames:
@@ -798,18 +799,18 @@ class CatalogLib(object):
         # toplevelname_index: {lang -> ilk -> toplevelname -> res_id -> blobnames}
         if self.lang in self.catalogs_zone.toplevelname_index:
             for i, potential_bfrft \
-                in self.catalogs_zone.toplevelname_index[self.lang].iteritems():
+                in six.iteritems(self.catalogs_zone.toplevelname_index[self.lang]):
                 if ilk is not None and i != ilk:
                     continue
                 if toplevelname not in potential_bfrft:
                     continue
                 potential_bfr = potential_bfrft[toplevelname]
                 if self.selection_res_id_set is None:
-                    for blobnames in potential_bfr.itervalues():
+                    for blobnames in six.itervalues(potential_bfr):
                         for blobname in blobnames:
                             yield blobname
                 else:
-                    for res_id, blobnames in potential_bfr.iteritems():
+                    for res_id, blobnames in six.iteritems(potential_bfr):
                         if res_id not in self.selection_res_id_set:
                             continue
                         for blobname in blobnames:
@@ -865,14 +866,14 @@ class CatalogLib(object):
                         if self.selection_res_id_set is None:
                             cplns += [(ilk, t) for t in bfrft]
                         else:
-                            cplns += [(ilk, t) for t, bfr in bfrft.iteritems()
+                            cplns += [(ilk, t) for t, bfr in six.iteritems(bfrft)
                                       if self.selection_res_id_set.intersection(bfr)]
                 elif self.selection_res_id_set is None:
-                    for i, bfrft in toplevelname_index[self.lang].iteritems():
+                    for i, bfrft in six.iteritems(toplevelname_index[self.lang]):
                         cplns += [(i, t) for t in bfrft]
                 else: # ilk=None, have a selection set
-                    for i, bfrft in toplevelname_index[self.lang].iteritems():
-                        cplns += [(i, t) for t, bfr in bfrft.iteritems()
+                    for i, bfrft in six.iteritems(toplevelname_index[self.lang]):
+                        cplns += [(i, t) for t, bfr in six.iteritems(bfrft)
                                   if self.selection_res_id_set.intersection(bfr)]
         else:
             # Use 'toplevelprefix_index':
@@ -887,21 +888,21 @@ class CatalogLib(object):
                     else:
                         if self.selection_res_id_set is None:
                             cplns += [(ilk, t)
-                                      for toplevelnames in tfr.itervalues()
+                                      for toplevelnames in six.itervalues(tfr)
                                       for t in toplevelnames]
                         else:
                             cplns += [(ilk, t)
                                       for r in self.selection_res_id_set.intersection(tfr)
                                       for t in tfr[r]]
                 elif self.selection_res_id_set is None:
-                    for i, tfrfp in toplevelprefix_index[self.lang].iteritems():
+                    for i, tfrfp in six.iteritems(toplevelprefix_index[self.lang]):
                         if prefix not in tfrfp:
                             continue
                         cplns += [(i, t)
-                                  for toplevelnames in tfrfp[prefix].itervalues()
+                                  for toplevelnames in six.itervalues(tfrfp[prefix])
                                   for t in toplevelnames]
                 else: # ilk=None, have a selection set
-                    for i, tfrfp in toplevelprefix_index[self.lang].iteritems():
+                    for i, tfrfp in six.iteritems(toplevelprefix_index[self.lang]):
                         if prefix not in tfrfp:
                             continue
                         tfr = tfrfp[prefix]

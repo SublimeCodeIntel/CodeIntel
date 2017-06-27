@@ -7,6 +7,7 @@ register() function called to register this language with the system. All
 Code Intelligence for this language is controlled through this module.
 """
 
+from __future__ import absolute_import
 import logging
 
 from codeintel2.common import TRG_FORM_CPLN, Trigger

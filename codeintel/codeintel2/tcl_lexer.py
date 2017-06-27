@@ -54,6 +54,7 @@ while 1:
     # column and line numbers are all zero-based.
 """
 
+from __future__ import absolute_import
 import copy
 import re
 import sys
@@ -61,8 +62,8 @@ import string
 
 import SilverCity
 from SilverCity import ScintillaConstants
-import shared_lexer
-from shared_lexer import EOF_STYLE
+from . import shared_lexer
+from .shared_lexer import EOF_STYLE
 
 from codeintel2 import lang_tcl
 

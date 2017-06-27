@@ -54,14 +54,15 @@ while 1:
     # column and line numbers are all zero-based.
 """
 
+from __future__ import absolute_import
 import re
 import sys
 import string
 
 # import SilverCity
 from SilverCity import Ruby, ScintillaConstants
-import shared_lexer
-from shared_lexer import EOF_STYLE
+from . import shared_lexer
+from .shared_lexer import EOF_STYLE
 
 class RubyLexerClassifier:
     """ This classifier is similar to the parser-level classifier, but
@@ -130,7 +131,7 @@ class RubyMultiLangLexer(_CommonLexer):
     def _build_tokens(self, token_source):
         while True:
             try:
-                tok = token_source.next()
+                tok = next(token_source)
                 self._fix_token_list(tok)
             except StopIteration:
                 break

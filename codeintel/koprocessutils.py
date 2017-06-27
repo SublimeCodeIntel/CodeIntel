@@ -58,7 +58,9 @@
       p = process.ProcessOpen(cmd, env=env)
 """
 
+from __future__ import absolute_import
 from xpcom import components, nsError, ServerException
+import six
 
 #---- globals
 
@@ -80,7 +82,7 @@ def initialize():
         #XXX This unicode conversion is not necessary since
         #    _SaferCreateProcess in process.py. Keeping it for Komodo 2.0
         #    release though.
-        userEnv[unicode(key)] = unicode(val)
+        userEnv[six.text_type(key)] = six.text_type(val)
     if 'PWD' in userEnv:
         del userEnv['PWD']
     _gUserEnvCache = userEnv

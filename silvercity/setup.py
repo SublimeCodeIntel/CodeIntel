@@ -1,5 +1,6 @@
 #!/usr/bin/env python 
  
+from __future__ import absolute_import
 from distutils.core import setup, Extension 
 from distutils.command.build_ext import build_ext
 from distutils.command.install_data import install_data

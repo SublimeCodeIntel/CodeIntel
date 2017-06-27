@@ -2,6 +2,7 @@
 CSS 1 definitions.
 """
 
+from __future__ import absolute_import
 import textwrap
 
 CSS_PSEUDO_CLASS_NAMES = """first-letter first-line link active visited

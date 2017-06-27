@@ -40,11 +40,12 @@ See the database/database.py module docstring for an overview.
 """
 
 
+from __future__ import absolute_import
 import sys
 import os
 from os.path import (join, dirname, exists, expanduser, splitext, basename,
                      split, abspath, isabs, isdir, isfile)
-import cPickle as pickle
+import six.moves.cPickle as pickle
 import threading
 import time
 import bisect
@@ -52,11 +53,11 @@ import fnmatch
 from glob import glob
 from pprint import pprint, pformat
 import logging
-from cStringIO import StringIO
+from six.moves import cStringIO as StringIO
 import codecs
 import copy
 import weakref
-import Queue
+import six.moves.queue
 
 import ciElementTree as ET
 from codeintel2.common import *
@@ -65,6 +66,8 @@ from codeintel2.util import dedent, safe_lang_from_lang, banner
 from codeintel2.tree import tree_from_cix_path
 from codeintel2.database.resource import AreaResource
 from codeintel2.database.util import (rmdir, filter_blobnames_for_prefix)
+import six
+from six.moves import map
 
 
 
@@ -186,7 +189,7 @@ class StdLib(object):
         assert isinstance(lpath, tuple)  # common mistake to pass in a string
         hits = []
         # toplevelname_index: {ilk -> toplevelname -> blobnames}
-        for blobnames_from_toplevelname in self.toplevelname_index.itervalues():
+        for blobnames_from_toplevelname in six.itervalues(self.toplevelname_index):
             for blobname in blobnames_from_toplevelname.get(lpath[0], ()):
                 blob = self.get_blob(blobname)
                 try:
@@ -224,7 +227,7 @@ class StdLib(object):
         cplns = []
         if prefix is None:
             # Use 'toplevelname_index': {ilk -> toplevelname -> blobnames}
-            for i, bft in self.toplevelname_index.iteritems():
+            for i, bft in six.iteritems(self.toplevelname_index):
                 if ilk is not None and i != ilk:
                     continue
                 cplns += [(i, toplevelname) for toplevelname in bft]
@@ -239,7 +242,7 @@ class StdLib(object):
                 else:
                     cplns += [(ilk, t) for t in toplevelnames]
             else:
-                for i, tfp in self.toplevelprefix_index.iteritems():
+                for i, tfp in six.iteritems(self.toplevelprefix_index):
                     if prefix not in tfp:
                         continue
                     cplns += [(i, t) for t in tfp[prefix]]
@@ -426,12 +429,12 @@ class StdLibsZone(object):
         try:
             import process
             import which
-        except ImportError, ex:
+        except ImportError as ex:
             log.info("can't preload stdlibs: %s", ex)
             return False
         try:
             which.which("unzip")
-        except which.WhichError, ex:
+        except which.WhichError as ex:
             log.info("can't preload stdlibs: %s", ex)
             return False
         preload_zip = self._get_preload_zip()
@@ -587,10 +590,10 @@ class StdLibsZone(object):
         dbdir = join(self.base_dir, name)
         try:
             rmdir(dbdir)
-        except OSError, ex:
+        except OSError as ex:
             try:
                 os.rename(dbdir, dbdir+".zombie")
-            except OSError, ex2:
+            except OSError as ex2:
                 log.error("could not remove %s stdlib database dir `%s' (%s): "
                           "couldn't even rename it to `%s.zombie' (%s): "
                           "giving up", name, dbdir, ex, name, ex2)
@@ -603,7 +606,7 @@ class StdLibsZone(object):
         cix_path = res.path
         try:
             tree = tree_from_cix_path(cix_path)
-        except ET.XMLParserError, ex:
+        except ET.XMLParserError as ex:
             log.warn("could not load %s stdlib from `%s' (%s): skipping",
                      name, cix_path, ex)
             return
@@ -614,7 +617,7 @@ class StdLibsZone(object):
                      "removing it", name)
             try:
                 rmdir(dbdir)
-            except OSError, ex:
+            except OSError as ex:
                 log.error("could not remove `%s' to create %s stdlib in "
                           "database (%s): skipping", dbdir, name)
         if not exists(dbdir):
@@ -634,7 +637,7 @@ class StdLibsZone(object):
             dbfile = self.db.bhash_from_blob_info(cix_path, lang, blobname)
             blob_index[blobname] = dbfile
             ET.ElementTree(blob).write(join(dbdir, dbfile+".blob"))
-            for toplevelname, elem in blob.names.iteritems():
+            for toplevelname, elem in six.iteritems(blob.names):
                 if "__local__" in elem.get("attributes", "").split():
                     # this is internal to the stdlib
                     continue

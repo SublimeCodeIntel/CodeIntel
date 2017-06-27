@@ -22,6 +22,8 @@ Utility Functions:
 #       http://developer.apple.com/documentation/MacOSX/Conceptual/BPFileSystem/index.html
 #       http://msdn.microsoft.com/library/default.asp?url=/library/en-us/shellcc/platform/shell/reference/enums/csidl.asp
 
+from __future__ import absolute_import
+from __future__ import print_function
 __version_info__ = (1, 0, 1)
 __version__ = '.'.join(map(str, __version_info__))
 __author__ = "Trent Mick"
@@ -50,7 +52,7 @@ def user_data_dir(appname, owner=None, version=None, csidl=None):
         "csidl" is an optional special folder to use - only applies to Windows.
     
     Typical user data directories are:
-        Win XP:     C:\Documents and Settings\USER\Application Data\<owner>\<appname>
+        Win XP:     C:/Documents and Settings/USER/Application Data/<owner>/<appname>
         Mac OS X:   ~/Library/Application Support/<appname>
         Unix:       ~/.<lowercased-appname>
     
@@ -127,7 +129,7 @@ def user_cache_dir(appname, owner=None, version=None):
             would typically be "<major>.<minor>".
     
     Typical user cache directories are:
-        Win XP:     C:\Documents and Settings\USER\Local Settings\Application Data\<owner>\<appname>
+        Win XP:     C:/Documents and Settings/USER/Local Settings/Application Data/<owner>/<appname>
         Mac OS X:   ~/Library/Caches/<appname>
         Unix:       ~/.<lowercased-appname>/caches
 
@@ -158,7 +160,7 @@ def _get_win_folder_from_registry(csidl_name):
     registry for this guarantees us the correct answer for all CSIDL_*
     names.
     """
-    import _winreg
+    import six.moves.winreg
     
     shell_folder_name = {
         "CSIDL_APPDATA": "AppData",
@@ -166,9 +168,9 @@ def _get_win_folder_from_registry(csidl_name):
         "CSIDL_LOCAL_APPDATA": "Local AppData",
     }[csidl_name]
 
-    key = _winreg.OpenKey(_winreg.HKEY_CURRENT_USER,
+    key = six.moves.winreg.OpenKey(six.moves.winreg.HKEY_CURRENT_USER,
         r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
-    dir, type = _winreg.QueryValueEx(key, shell_folder_name)
+    dir, type = six.moves.winreg.QueryValueEx(key, shell_folder_name)
     return dir
 
 def _get_win_folder_with_ctypes(csidl_name):
@@ -205,7 +207,7 @@ if sys.platform == "win32":
 #---- self test code
 
 if __name__ == "__main__":
-    print "applib: user data dir:", user_data_dir("Komodo", "ActiveState")
-    print "applib: site data dir:", site_data_dir("Komodo", "ActiveState")
-    print "applib: user cache dir:", user_cache_dir("Komodo", "ActiveState")
+    print("applib: user data dir:", user_data_dir("Komodo", "ActiveState"))
+    print("applib: site data dir:", site_data_dir("Komodo", "ActiveState"))
+    print("applib: user cache dir:", user_cache_dir("Komodo", "ActiveState"))
 

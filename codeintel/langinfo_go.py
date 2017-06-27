@@ -1,11 +1,12 @@
 
 """LangInfo definition for "Go" language."""
 
+from __future__ import absolute_import
 from langinfo import LangInfo
 
 lang = "Go"
 import styles
-if not styles.StateMap.has_key(lang):
+if lang not in styles.StateMap:
     map = styles.StateMap['C++'].copy()
     styles.addSharedStyles(map)
     styles.StateMap[lang] = map

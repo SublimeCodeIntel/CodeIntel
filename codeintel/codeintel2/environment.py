@@ -56,6 +56,7 @@ codeintel2.oop.driver.Environment instance.
 Read the base Environment class for details on the API.
 """
 
+from __future__ import absolute_import
 import os
 import logging
 

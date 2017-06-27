@@ -88,6 +88,9 @@ allow Komodo extensions to add/override language info.)
 #TODO: "/Library/Application Support/Apple/Developer Tools/Quartz Composer/Clips/Cubic.qtz"
 #      not recognized as "data", but it *is* by `file`.
 
+from __future__ import absolute_import
+import six
+from six.moves import map
 __version_info__ = (1, 0, 0)
 __version__ = '.'.join(map(str, __version_info__))
 
@@ -388,7 +391,7 @@ class Database(object):
             else:  # a struct format
                 try:
                     length = struct.calcsize(format)
-                except struct.error, ex:
+                except struct.error as ex:
                     warnings.warn("error in %s magic number struct format: %r"
                                       % (li, format),
                                   InvalidLangInfoWarning)
@@ -483,7 +486,7 @@ class Database(object):
                         self._langinfo_from_ext[ext] = li
             if li.filename_patterns:
                 for pat in li.filename_patterns:
-                    if isinstance(pat, basestring):
+                    if isinstance(pat, six.string_types):
                         self._langinfo_from_filename[pat] = li
                     else:
                         self._langinfo_from_filename_re[pat] = li
@@ -524,7 +527,7 @@ class Database(object):
     def _load(self):
         """Load LangInfo classes in this module."""
         for name, g in globals().items():
-            if isinstance(g, (types.ClassType, types.TypeType)) \
+            if isinstance(g, (type, type)) \
                and issubclass(g, LangInfo) and g is not LangInfo:
                 norm_lang = self._norm_lang_from_lang(g.name)
                 self._langinfo_from_norm_lang[norm_lang] = g(self)
@@ -534,7 +537,7 @@ class Database(object):
         for path in glob(join(d, "langinfo_*.py")):
             try:
                 module = _module_from_path(path)
-            except Exception, ex:
+            except Exception as ex:
                 log.warn("could not import `%s': %s", path, ex)
                 #import traceback
                 #traceback.print_exc()
@@ -542,7 +545,7 @@ class Database(object):
             for name in dir(module):
                 attr = getattr(module, name)
                 if (not name.startswith("_")   # skip internal bases
-                    and isinstance(attr, (types.ClassType, types.TypeType))
+                    and isinstance(attr, (type, type))
                     and issubclass(attr, LangInfo)
                     and attr is not LangInfo):
                     norm_lang = self._norm_lang_from_lang(attr.name)

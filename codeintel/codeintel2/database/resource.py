@@ -38,6 +38,7 @@
 
 #TODO: docstring
 
+from __future__ import absolute_import
 import os
 from os.path import join, dirname, abspath, isabs
 import logging

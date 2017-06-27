@@ -23,6 +23,7 @@ by external modules. Implementing a hook is done by adding a
     --------------------------
 """
 
+from __future__ import absolute_import
 from pprint import pformat
 
 from codeintel2.common import *

@@ -61,10 +61,14 @@ else:
 """
 
 
+from __future__ import absolute_import, unicode_literals
 import codecs, encodings, re
+from six.moves import map
+import six
+from six.moves import range
 
-re_firstline = re.compile(ur'(.*?)(?:\r|\n|$)')
-re_htmlmeta = re.compile(ur'<meta.*?charset=(.*?)">')
+re_firstline = re.compile(r'(.*?)(?:\r|\n|$)')
+re_htmlmeta = re.compile(r'<meta.*?charset=(.*?)">')
 
 """Komodo will hand this library a buffer and ask it to either convert
 it or auto-detect the type."""
@@ -88,7 +92,7 @@ def checkBOM(buffer):
     """
     
     for i in range(min(4,len(buffer)),0,-1):
-        encoding = autodetect_dict.get( tuple(map(ord, buffer[0:i]) + [None] * (4-i)) )
+        encoding = autodetect_dict.get( tuple(list(map(ord, buffer[0:i])) + [None] * (4-i)) )
         if encoding:
             return (encoding, i)
 
@@ -104,14 +108,14 @@ def tryEncoding(buffer, encoding):
     
     try:
         secret_decoder_ring = codecs.lookup(encoding)[1]
-    except LookupError, e:
+    except LookupError as e:
         # the encoding name doesn't exist, likely a pep263 failure
         # an example is using windows-1250 as the name
         return None
     try:
         (outdata,len) = secret_decoder_ring(buffer)
         return outdata
-    except Exception, e: # Figure out the real exception types
+    except Exception as e: # Figure out the real exception types
         return None
 
 pep263re = re.compile("coding[:=]\s*([\w\-_.]+)")
@@ -342,7 +346,7 @@ def recode_unicode(buffer, from_encoding, to_encoding, errors='strict'):
         (raw, len) = codecs.getencoder(from_encoding)(buffer, errors)
     # convert back to a unicode string with the new encoding
     # decode to ucs-2 unicode object
-    return unicode(raw, to_encoding, errors)
+    return six.text_type(raw, to_encoding, errors)
 
 def recode_raw(buffer, from_encoding, to_encoding, errors='strict'):
     assert(type(buffer)==type(''))

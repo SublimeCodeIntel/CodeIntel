@@ -37,6 +37,7 @@
 
 """Tcl support for CodeIntel"""
 
+from __future__ import absolute_import
 import sys
 import os
 import logging
@@ -144,8 +145,8 @@ class TclImportHandler(ImportHandler):
     # for Tcl.
     PATH_ENV_VAR = None
 
-    def _findScannableFiles(self, (files, searchedDirs, skipRareImports),
-                            dirname, names):
+    def _findScannableFiles(self, params, dirname, names):
+        (files, searchedDirs, skipRareImports) = params
         if sys.platform.startswith("win"):
             cpath = dirname.lower()
         else:

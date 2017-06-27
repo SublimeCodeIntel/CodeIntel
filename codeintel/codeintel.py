@@ -272,6 +272,7 @@ class _TCPConnection(_Connection):
         if self.sock:
             self.sock.close()
 
+
 if sys.platform.startswith("win"):
     from win32_named_pipe import Win32Pipe
 
@@ -328,6 +329,10 @@ else:
                 pass
 
         def close(self):
+            try:
+                self.cleanup()
+            except:
+                pass
             self._read.close()
             self._write.close()
 
@@ -508,18 +513,17 @@ class CodeIntelManager(threading.Thread):
             self._watchdog_thread.start()
 
             self.pipe = conn.get_stream()
+
+            conn.cleanup()  # This will remove the filesystem files (it keeps the fds open)
+
             self.state = CodeIntelManager.STATE_CONNECTED
         except Exception as e:
             self.kill()
             message = "Error initing child: %s" % e
-            self.log.debug(message, exc_info=True)
+            self.log.error(message, exc_info=True)
             self._init_callback(self, message)
         else:
             self._send_init_requests()
-            try:
-                conn.cleanup()
-            except:
-                pass
 
     def _run_watchdog_thread(self, proc):
         self.log.debug("Watchdog witing for OOP codeintel process to die...")
@@ -761,58 +765,59 @@ class CodeIntelManager(threading.Thread):
         assert threading.current_thread().name != "MainThread", \
             "CodeIntelManager.run should run on background thread!"
 
-        self.init_child()
-        if not self.proc:
-            return  # init child failed
+        while True:
+            self.init_child()
+            if not self.proc:
+                break  # init child failed
 
-        first_buf = True
-        discard_time = 0.0
-        try:
-            buf = b''
-            while self.proc and self.pipe:
-                # Loop to read from the pipe
-                ch = self.pipe.read(1)
-                if ch == b'{':
-                    length = int(buf)
-                    buf = ch
-                    while len(buf) < length:
-                        last_size = len(buf)
-                        buf += self.pipe.read(length - len(buf))
-                        if len(buf) == last_size:
-                            # nothing read, EOF
-                            raise IOError("Failed to read frame from socket")
-                    self.log.debug("Got codeintel response: %r" % buf)
-                    if first_buf and buf == b'{}':
-                        first_buf = False
+            first_buf = True
+            discard_time = 0.0
+            try:
+                buf = b''
+                while self.proc and self.pipe:
+                    # Loop to read from the pipe
+                    ch = self.pipe.read(1)
+                    if ch == b'{':
+                        length = int(buf)
+                        buf = ch
+                        while len(buf) < length:
+                            last_size = len(buf)
+                            buf += self.pipe.read(length - len(buf))
+                            if len(buf) == last_size:
+                                # nothing read, EOF
+                                raise IOError("Failed to read frame from socket")
+                        self.log.debug("Got codeintel response: %r" % buf)
+                        if first_buf and buf == b'{}':
+                            first_buf = False
+                            buf = b''
+                            continue
+                        response = json.loads(buf.decode('utf-8'))
+                        self.handle(response)  # handle runs asynchronously and shouldn't raise exceptions
                         buf = b''
-                        continue
-                    response = json.loads(buf.decode('utf-8'))
-                    self.handle(response)  # handle runs asynchronously and shouldn't raise exceptions
-                    buf = b''
-                else:
-                    if ch not in b'0123456789':
-                        raise ValueError("Invalid frame length character: %r" % ch)
-                    buf += ch
+                    else:
+                        if ch not in b'0123456789':
+                            raise ValueError("Invalid frame length character: %r" % ch)
+                        buf += ch
 
-                now = time.time()
-                if now - discard_time > 60:  # discard some stale results
-                    for req_id, (callback, request, sent_time) in list(self.requests.items()):
-                        if sent_time < now - 5 * 60:
-                            # sent 5 minutes ago - it's irrelevant now
-                            try:
-                                if callback:
-                                    callback(request, {})
-                            except:
-                                self.log.exception("Failed timing out request")
-                            else:
-                                self.log.debug("Discarding request %r", request)
-                            del self.requests[req_id]
-        except Exception as ex:
-            if isinstance(ex, IOError) and self.state in (CodeIntelManager.STATE_QUITTING, CodeIntelManager.STATE_DESTROYED):
-                self.log.debug("IOError in codeintel during shutdown; ignoring")
-                return  # this is intentional
-            self.log.exception("Error reading data from codeintel")
-            self.kill()
+                    now = time.time()
+                    if now - discard_time > 60:  # discard some stale results
+                        for req_id, (callback, request, sent_time) in list(self.requests.items()):
+                            if sent_time < now - 5 * 60:
+                                # sent 5 minutes ago - it's irrelevant now
+                                try:
+                                    if callback:
+                                        callback(request, {})
+                                except:
+                                    self.log.exception("Failed timing out request")
+                                else:
+                                    self.log.debug("Discarding request %r", request)
+                                del self.requests[req_id]
+            except Exception:
+                if self.state in (CodeIntelManager.STATE_QUITTING, CodeIntelManager.STATE_DESTROYED):
+                    self.log.debug("IOError in codeintel during shutdown; ignoring")
+                    break  # this is intentional
+                self.log.exception("Error reading data from codeintel")
+                self.kill()
 
     def handle(self, response):
         """Handle a response from the codeintel process"""

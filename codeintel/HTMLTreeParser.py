@@ -36,9 +36,16 @@
 
 
 #import htmlentitydefs
+from __future__ import absolute_import
+from __future__ import print_function
 import re, string, sys
-import mimetools, StringIO
+from six.moves import cStringIO as StringIO
 from elementtree import ElementTree
+import six
+try:
+    from email.message import Message
+except ImportError:
+    from mimetools import Message
 
 # Lazily load the collecter on demand, rather than at import time.
 g_collector = None
@@ -178,8 +185,8 @@ class HTMLTreeBuilder(ElementTree.TreeBuilder):
                     content = v
             if http_equiv == "content-type" and content:
                 # use mimetools to parse the http header
-                header = mimetools.Message(
-                    StringIO.StringIO("%s: %s\n\n" % (http_equiv, content))
+                header = Message(
+                    StringIO("%s: %s\n\n" % (http_equiv, content))
                     )
                 encoding = header.getparam("charset")
                 if encoding:
@@ -266,7 +273,7 @@ class HTMLTreeBuilder(ElementTree.TreeBuilder):
     def data(self, data):
         if isinstance(data, type('')) and is_not_ascii(data):
             # convert to unicode, but only if necessary
-            data = unicode(data, self.encoding, "ignore")
+            data = six.text_type(data, self.encoding, "ignore")
         ElementTree.TreeBuilder.data(self, data)
 
     def close(self):
@@ -378,7 +385,7 @@ try:
 
         def feed(self, data, markuponly=0):
             self.data = data
-            if isinstance(data, unicode):
+            if isinstance(data, six.text_type):
                 # XXX marky: convert the data to UTF8; this won't be needed
                 # once we transition the codeintel process to always be UTF-8.
                 # This should go away once bug 100136 is fixed.
@@ -413,11 +420,11 @@ if __name__=="__main__":
         t1 = time.time()
         tree = HTML(data, ReParser)
         t2 = time.time()
-        print "RE parsing took %s" % (t2-t1)
+        print("RE parsing took %s" % (t2-t1))
         t1 = time.time()
         tree = HTML(data, SgmlopParser)
         t2 = time.time()
-        print "sgmlop parsing took %s" % (t2-t1)
+        print("sgmlop parsing took %s" % (t2-t1))
         sys.exit(0)
     
     data = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
@@ -432,7 +439,7 @@ if __name__=="__main__":
 </body>
 </html>"""
     tree = HTML(data)
-    print ElementTree.tostring(tree)
+    print(ElementTree.tostring(tree))
     sys.exit(0)
     
 
@@ -442,7 +449,7 @@ if __name__=="__main__":
 <head>
 """
     tree = HTML(data)
-    print ElementTree.tostring(tree)
+    print(ElementTree.tostring(tree))
     sys.exit(0)
 
     data = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
@@ -651,7 +658,7 @@ function fadeTableRow(rowid, opts) {
 
 """
     tree = HTML(data)
-    print ElementTree.tostring(tree)
+    print(ElementTree.tostring(tree))
     p = Parser(HTMLTreeBuilder())
     p.feed(data)
     p.close()

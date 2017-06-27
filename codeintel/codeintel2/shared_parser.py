@@ -54,6 +54,7 @@ get_builtin_type, is_interpolating_string, and
 tokenStyleToContainerStyle (if any of these are called, that is).
 
 """
+from __future__ import absolute_import
 import re
 
 from SilverCity import ScintillaConstants
@@ -68,12 +69,12 @@ class CommonClassifier:
 
     def get_quote_patterns(self, tok, callback=None):
         ttype = tok['style']
-        if self._quote_patterns.has_key(ttype):
+        if ttype in self._quote_patterns:
             return [self._quote_patterns[ttype]]
         elif callback:
             return callback(tok)
         else:
-            return self._quote_patterns.values()
+            return list(self._quote_patterns.values())
 
     def is_identifier_or_keyword(self, tok):
         return self.is_identifier(tok, True)

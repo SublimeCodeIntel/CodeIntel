@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import sys
 import unittest
 
@@ -82,21 +84,21 @@ class PropertySetTestCase(unittest.TestCase):
     def check_keys_and_values(self):
         ps = PropertySet()
 
-        assert ps.keys() == []
-        assert ps.values() == []
+        assert list(ps.keys()) == []
+        assert list(ps.values()) == []
         
         ps['p1'] = '1'
 
-        assert ps.keys() == ['p1']
-        assert ps.values() == ['1']
+        assert list(ps.keys()) == ['p1']
+        assert list(ps.values()) == ['1']
 
         ps['p2'] = '2'
         
-        keys = ps.keys()
+        keys = list(ps.keys())
         keys.sort()
         assert keys == ['p1', 'p2']
 
-        values = ps.values()
+        values = list(ps.values())
         values.sort()
         assert values == ['1', '2']
         
@@ -186,5 +188,5 @@ if __name__ == "__main__":
         if sys.argv[1] == '--experimental':
             testExperimental()
         else:
-            print 'usage: %s [--experimental]' % sys.argv[0]
+            print('usage: %s [--experimental]' % sys.argv[0])
             sys.exit(1)

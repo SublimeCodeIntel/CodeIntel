@@ -36,6 +36,7 @@
 
 """LangInfo definitions for template languages."""
 
+from __future__ import absolute_import
 import re
 from langinfo import LangInfo
 

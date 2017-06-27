@@ -36,6 +36,7 @@
 
 """LangInfo definitions for some document languages."""
 
+from __future__ import absolute_import
 import re
 from langinfo import LangInfo
 
@@ -122,7 +123,7 @@ class XSLTLangInfo(LangInfo):
     #PERF: Only want to include this if necessary (for perf), i.e. if
     #      `exts` isn't sufficient.
     #magic_numbers = [
-    #    (0, "regex", re.compile(r'^<xsl:stylesheet ', re.M))
+    #    (0, "regex", re.compile(br'^<xsl:stylesheet ', re.M))
     #]
 
 class XULLangInfo(LangInfo):
@@ -174,7 +175,7 @@ class JSONLangInfo(LangInfo):
     exts = [".json"]
 
     section_regexes = [
-        ("namespace", re.compile(r'"(?P<name>[^"]*?)"\s*:\s*{', re.M)),
+        ("namespace", re.compile(br'"(?P<name>[^"]*?)"\s*:\s*{', re.M)),
     ]
 
 class DTDLangInfo(LangInfo):
@@ -188,7 +189,7 @@ class PODLangInfo(LangInfo):
     conforms_to_bases = ["Text"]
     exts = [".pod"]
     # http://search.cpan.org/~nwclark/perl-5.8.8/pod/perlpod.pod
-    encoding_decl_pattern = re.compile(r"^=encoding\s+(?P<encoding>[-\w.]+)", re.M)
+    encoding_decl_pattern = re.compile(br"^=encoding\s+(?P<encoding>[-\w.]+)", re.M)
 
 class ASN1LangInfo(LangInfo):
     name = "ASN.1"
@@ -236,7 +237,7 @@ class TracWikiLangInfo(LangInfo):
     # A "!" in the header escapes *all* the immediately following = chars.
     section_regexes = [
         ("header",
-         re.compile(r'''
+         re.compile(br'''
             ^
             \s*
             (={1,5})
