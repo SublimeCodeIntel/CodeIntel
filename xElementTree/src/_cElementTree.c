@@ -87,7 +87,9 @@
     #define PyString_GET_SIZE PyBytes_GET_SIZE
     #define _PyString_Resize _PyBytes_Resize
     #define PyObject_Compare(l, r) !PyObject_RichCompareBool(l, r, Py_EQ)
+    #define _Py_IDENTIFIER_REF(name) (name)
     #define _Py_SliceObject PyObject*
+    #define PyObject_Unicode PyObject_Str
 #else
     #define MOD_ERROR_VAL
     #define MOD_SUCCESS_VAL(val)
@@ -100,10 +102,11 @@
     #define PyUnicode_READ(kind, data, index) (((const Py_UNICODE *)(data))[(index)])
     #define _Py_IDENTIFIER(name) static char *PyId_##name = #name;
     #define _Py_Identifier char*
+    #define _Py_IDENTIFIER_REF(name) *(name)
     #define PyUnicode_New(len, c) PyUnicode_FromUnicode(NULL, (len));
     #define PyUnicode_CompareWithASCIIString(a, b) strcmp(PyString_AsString((a)), (b))
-    #define _PyObject_CallMethodId(obj, name, args...) PyObject_CallMethod((obj), *(name), args)
-    #define _PyObject_SetAttrId(obj, name, args...) PyObject_SetAttrString((obj), *(name), args)
+    #define _PyObject_CallMethodId PyObject_CallMethod
+    #define _PyObject_SetAttrId PyObject_SetAttrString
     #define _Py_SliceObject PySliceObject*
 #endif
 
@@ -1314,7 +1317,7 @@ element_find(ElementObject *self, PyObject *args, PyObject *kwds)
     if (checkpath(tag) || namespaces != Py_None) {
         _Py_IDENTIFIER(find);
         return _PyObject_CallMethodId(
-            elementpath_obj, &PyId_find, "OOO", self, tag, namespaces
+            elementpath_obj, _Py_IDENTIFIER_REF(&PyId_find), "OOO", self, tag, namespaces
             );
     }
 
@@ -1349,7 +1352,7 @@ element_findtext(ElementObject *self, PyObject *args, PyObject *kwds)
 
     if (checkpath(tag) || namespaces != Py_None)
         return _PyObject_CallMethodId(
-            elementpath_obj, &PyId_findtext, "OOOO", self, tag, default_value, namespaces
+            elementpath_obj, _Py_IDENTIFIER_REF(&PyId_findtext), "OOOO", self, tag, default_value, namespaces
             );
 
     if (!self->extra) {
@@ -1389,7 +1392,7 @@ element_findall(ElementObject *self, PyObject *args, PyObject *kwds)
     if (checkpath(tag) || namespaces != Py_None) {
         _Py_IDENTIFIER(findall);
         return _PyObject_CallMethodId(
-            elementpath_obj, &PyId_findall, "OOO", self, tag, namespaces
+            elementpath_obj, _Py_IDENTIFIER_REF(&PyId_findall), "OOO", self, tag, namespaces
             );
     }
 
@@ -1427,7 +1430,7 @@ element_iterfind(ElementObject *self, PyObject *args, PyObject *kwds)
         return NULL;
 
     return _PyObject_CallMethodId(
-        elementpath_obj, &PyId_iterfind, "OOO", self, tag, namespaces
+        elementpath_obj, _Py_IDENTIFIER_REF(&PyId_iterfind), "OOO", self, tag, namespaces
         );
 }
 
@@ -2376,7 +2379,7 @@ treebuilder_set_element_text_or_tail(PyObject *element, PyObject *data,
         int r;
         if (joined == NULL)
             return -1;
-        r = _PyObject_SetAttrId(element, name, joined);
+        r = _PyObject_SetAttrId(element, _Py_IDENTIFIER_REF(name), joined);
         Py_DECREF(joined);
         return r;
     }
@@ -2409,7 +2412,7 @@ treebuilder_add_subelement(PyObject *element, PyObject *child)
     }
     else {
         PyObject *res;
-        res = _PyObject_CallMethodId(element, &PyId_append, "O", child);
+        res = _PyObject_CallMethodId(element, _Py_IDENTIFIER_REF(&PyId_append), "O", child);
         if (res == NULL)
             return -1;
         Py_DECREF(res);
