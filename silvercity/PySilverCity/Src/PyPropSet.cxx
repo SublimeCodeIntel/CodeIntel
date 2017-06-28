@@ -4,6 +4,10 @@
 
 #include "PyPropSet.h"
 
+#if PY_MAJOR_VERSION >= 3
+    #define PyObject_Unicode PyObject_Str
+#endif
+
 static char keys_doc[] = 
 "keys() -> list of PropertySet's keys";
 
