@@ -1343,8 +1343,8 @@ element_findtext(ElementObject *self, PyObject *args, PyObject *kwds)
     PyObject* tag;
     PyObject* default_value = Py_None;
     PyObject* namespaces = Py_None;
-    _Py_IDENTIFIER(findtext);
     static char *kwlist[] = {"path", "default", "namespaces", 0};
+    _Py_IDENTIFIER(findtext);
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|OO:findtext", kwlist,
                                      &tag, &default_value, &namespaces))
@@ -1422,8 +1422,8 @@ element_iterfind(ElementObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject* tag;
     PyObject* namespaces = Py_None;
-    _Py_IDENTIFIER(iterfind);
     static char *kwlist[] = {"path", "namespaces", 0};
+    _Py_IDENTIFIER(iterfind);
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O:iterfind", kwlist,
                                      &tag, &namespaces))
