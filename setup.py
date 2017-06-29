@@ -207,10 +207,11 @@ cielementtree_ext = Extension(
 # codeintel
 
 install_requires = [
+    'apsw',
+    'chardet',
+    'inflector',
     'six',
     'zope.cachedescriptors',
-    'inflector',
-    'apsw',
 ]
 
 if sys.version_info[0] == 2:
