@@ -657,10 +657,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             varargsIndex = kwargsIndex = None
         sigArgs = []
         for i, node_arg in enumerate(node_args.args):
-            if six.PY3:
-                argName = node_arg.arg  # Python 3
-            else:
-                argName = node_arg.id  # Python 2
+            argName = node_arg.arg if six.PY3 else node_arg.id
             argument = {"name": argName,
                         "nspath": nspath + (argName,),
                         "doc": None,
@@ -837,7 +834,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             isinstance(rhsNode, ast.Call) and
             rhsNode.args and
             isinstance(rhsNode.args[0], ast.Name) and
-            variable["name"] == rhsNode.args[0].id
+            variable["name"] == (rhsNode.args[0].arg if six.PY3 else rhsNode.args[0].id)
         ):
             # a speial case for 2.4-styled decorators
             return
@@ -1202,7 +1199,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         """
         s = None
         if isinstance(node, ast.Name):
-            s = node.id
+            s = node.arg if six.PY3 else node.id
         elif isinstance(node, ast.Num):
             s = repr(node.n)
         elif isinstance(node, (ast.Str, getattr(ast, 'Bytes', ast.Str))):
@@ -1346,8 +1343,8 @@ class AST2CIXVisitor(ast.NodeVisitor):
             else:
                 varargsIndex = kwargsIndex = None
             sigArgs = []
-            for i in range(len(node_args.args)):
-                argName = node_args.args[i].arg
+            for i, node_arg in enumerate(node_args.args):
+                argName = node_arg.arg if six.PY3 else node_arg.id
                 if i == kwargsIndex:
                     sigArgs.append("**" + argName)
                 elif i == varargsIndex:
@@ -1384,7 +1381,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         """
         s = None
         if isinstance(node, ast.Name):
-            s = node.id
+            s = node.arg if six.PY3 else node.id
         elif isinstance(node, ast.Num):
             s = repr(node.n)
         elif isinstance(node, (ast.Str, getattr(ast, 'Bytes', ast.Str))):
@@ -1615,7 +1612,8 @@ def _clean_func_args(defn):
         py2 = []
         for arg in arglist:
             name, value, type = arg
-            if name.id == "*":
+            argName = name.arg if six.PY3 else name.id
+            if argName == "*":
                 if not seen_kw:
                     name.value = "**kwargs"
                     py2.append(arg)
@@ -1742,6 +1740,8 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="Python"):
             content = _convert2to3(content)
             if _gClockIt:
                 sys.stdout.write(" (convert:%.3fs)" % (_gClock() - _gStartTime))
+
+    content = _rx(r'^[ \t\v]*#.*?coding[:=].*', re.MULTILINE).sub('', content)
 
     # The 'path' attribute must use normalized dir separators.
     if sys.platform.startswith("win"):

@@ -48,7 +48,7 @@ class _PythonCommonLangInfo(LangInfo):
     conforms_to_bases = ["Text"]
     exts = ['.py', '.pyw']
     # http://www.python.org/dev/peps/pep-0263/
-    encoding_decl_pattern = re.compile(br"coding[:=]\s*(?P<encoding>[-\w.]+)")
+    encoding_decl_pattern = re.compile(br'^[ \t\v]*#.*?coding[:=][ \t]*(?P<encoding>[-_.a-zA-Z0-9]+)')
 
 # Where there's a conflict in extensions, put the main
 # LangInfo entry last.
