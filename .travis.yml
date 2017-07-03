@@ -20,13 +20,17 @@ matrix:
     # Sources
     - os: linux
       dist: trusty
-      python: '2.7'
       env: SETUP_BUILD='sdist'
 
     # Manylinux binaries
     - sudo: required
       services:
         - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=27'
+    - sudo: required
+      services:
+        - docker
       env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
            DOCKER_OPTIONS='-e PYTHON_VERSION=27'
            DOCKER_PRE_CMD='linux32'
@@ -34,10 +38,8 @@ matrix:
     - sudo: required
       services:
         - docker
-      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
-           DOCKER_OPTIONS='-e PYTHON_VERSION=26'
-           DOCKER_PRE_CMD='linux32'
-
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=36'
     - sudo: required
       services:
         - docker
@@ -48,136 +50,140 @@ matrix:
     - sudo: required
       services:
         - docker
-      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
-           DOCKER_OPTIONS='-e PYTHON_VERSION=35'
-           DOCKER_PRE_CMD='linux32'
-
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
-           DOCKER_OPTIONS='-e PYTHON_VERSION=34'
-           DOCKER_PRE_CMD='linux32'
-
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
-           DOCKER_OPTIONS='-e PYTHON_VERSION=33'
-           DOCKER_PRE_CMD='linux32'
-
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
-           DOCKER_OPTIONS='-e PYTHON_VERSION=27'
-
-    - sudo: required
-      services:
-        - docker
       env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
            DOCKER_OPTIONS='-e PYTHON_VERSION=26'
-
     - sudo: required
       services:
         - docker
-      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
-           DOCKER_OPTIONS='-e PYTHON_VERSION=36'
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=26'
+           DOCKER_PRE_CMD='linux32'
 
     - sudo: required
       services:
         - docker
       env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
            DOCKER_OPTIONS='-e PYTHON_VERSION=35'
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=35'
+           DOCKER_PRE_CMD='linux32'
 
     - sudo: required
       services:
         - docker
       env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
            DOCKER_OPTIONS='-e PYTHON_VERSION=34'
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=34'
+           DOCKER_PRE_CMD='linux32'
 
     - sudo: required
       services:
         - docker
       env: DOCKER_IMAGE='quay.io/pypa/manylinux1_x86_64'
            DOCKER_OPTIONS='-e PYTHON_VERSION=33'
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux1_i686'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=33'
+           DOCKER_PRE_CMD='linux32'
 
-    # OS X binaries
+    # OS X 10.12 binaries
     - os: osx
-      osx_image: xcode8.3  # OS X 10.12
-      language: objective-c
-      env: PYENV_VERSION='2.7.13' PYENV_VERSION_STRING='Python 2.7.13'
-    - os: osx
-      osx_image: xcode7.3  # OS X 10.11
-      language: objective-c
-      env: PYENV_VERSION='2.7.13' PYENV_VERSION_STRING='Python 2.7.13'
-    - os: osx
-      osx_image: xcode6.4  # OS X 10.10
+      osx_image: xcode8.3
       language: objective-c
       env: PYENV_VERSION='2.7.13' PYENV_VERSION_STRING='Python 2.7.13'
 
     - os: osx
-      osx_image: xcode8.3  # OS X 10.12
-      language: objective-c
-      env: PYENV_VERSION='2.6.9' PYENV_VERSION_STRING='Python 2.6.9'
-    - os: osx
-      osx_image: xcode7.3  # OS X 10.11
-      language: objective-c
-      env: PYENV_VERSION='2.6.9' PYENV_VERSION_STRING='Python 2.6.9'
-    - os: osx
-      osx_image: xcode6.4  # OS X 10.10
-      language: objective-c
-      env: PYENV_VERSION='2.6.9' PYENV_VERSION_STRING='Python 2.6.9'
-
-    - os: osx
-      osx_image: xcode8.3  # OS X 10.12
-      language: objective-c
-      env: PYENV_VERSION='3.6.0' PYENV_VERSION_STRING='Python 3.6.0'
-    - os: osx
-      osx_image: xcode7.3  # OS X 10.11
-      language: objective-c
-      env: PYENV_VERSION='3.6.0' PYENV_VERSION_STRING='Python 3.6.0'
-    - os: osx
-      osx_image: xcode6.4  # OS X 10.10
+      osx_image: xcode8.3
       language: objective-c
       env: PYENV_VERSION='3.6.0' PYENV_VERSION_STRING='Python 3.6.0'
 
     - os: osx
-      osx_image: xcode8.3  # OS X 10.12
+      osx_image: xcode8.3
       language: objective-c
-      env: PYENV_VERSION='3.5.2' PYENV_VERSION_STRING='Python 3.5.2'
+      env: PYENV_VERSION='2.6.9' PYENV_VERSION_STRING='Python 2.6.9'
+
     - os: osx
-      osx_image: xcode7.3  # OS X 10.11
-      language: objective-c
-      env: PYENV_VERSION='3.5.2' PYENV_VERSION_STRING='Python 3.5.2'
-    - os: osx
-      osx_image: xcode6.4  # OS X 10.10
+      osx_image: xcode8.3
       language: objective-c
       env: PYENV_VERSION='3.5.2' PYENV_VERSION_STRING='Python 3.5.2'
 
     - os: osx
-      osx_image: xcode8.3  # OS X 10.12
-      language: objective-c
-      env: PYENV_VERSION='3.4.5' PYENV_VERSION_STRING='Python 3.4.5'
-    - os: osx
-      osx_image: xcode7.3  # OS X 10.11
-      language: objective-c
-      env: PYENV_VERSION='3.4.5' PYENV_VERSION_STRING='Python 3.4.5'
-    - os: osx
-      osx_image: xcode6.4  # OS X 10.10
+      osx_image: xcode8.3
       language: objective-c
       env: PYENV_VERSION='3.4.5' PYENV_VERSION_STRING='Python 3.4.5'
 
     - os: osx
-      osx_image: xcode8.3  # OS X 10.12
+      osx_image: xcode8.3
       language: objective-c
       env: PYENV_VERSION='3.3.6' PYENV_VERSION_STRING='Python 3.3.6'
+
+    # OS X 10.11 binaries
     - os: osx
-      osx_image: xcode7.3  # OS X 10.11
+      osx_image: xcode7.3
+      language: objective-c
+      env: PYENV_VERSION='2.7.13' PYENV_VERSION_STRING='Python 2.7.13'
+    - os: osx
+      osx_image: xcode7.3
+      language: objective-c
+      env: PYENV_VERSION='3.6.0' PYENV_VERSION_STRING='Python 3.6.0'
+
+    - os: osx
+      osx_image: xcode7.3
+      language: objective-c
+      env: PYENV_VERSION='2.6.9' PYENV_VERSION_STRING='Python 2.6.9'
+
+    - os: osx
+      osx_image: xcode7.3
+      language: objective-c
+      env: PYENV_VERSION='3.5.2' PYENV_VERSION_STRING='Python 3.5.2'
+
+    - os: osx
+      osx_image: xcode7.3
+      language: objective-c
+      env: PYENV_VERSION='3.4.5' PYENV_VERSION_STRING='Python 3.4.5'
+
+    - os: osx
+      osx_image: xcode7.3
       language: objective-c
       env: PYENV_VERSION='3.3.6' PYENV_VERSION_STRING='Python 3.3.6'
+
+    # OS X 10.10 binaries
     - os: osx
-      osx_image: xcode6.4  # OS X 10.10
+      osx_image: xcode6.4
+      language: objective-c
+      env: PYENV_VERSION='2.7.13' PYENV_VERSION_STRING='Python 2.7.13'
+
+    - os: osx
+      osx_image: xcode6.4
+      language: objective-c
+      env: PYENV_VERSION='3.6.0' PYENV_VERSION_STRING='Python 3.6.0'
+
+    - os: osx
+      osx_image: xcode6.4
+      language: objective-c
+      env: PYENV_VERSION='2.6.9' PYENV_VERSION_STRING='Python 2.6.9'
+
+    - os: osx
+      osx_image: xcode6.4
+      language: objective-c
+      env: PYENV_VERSION='3.5.2' PYENV_VERSION_STRING='Python 3.5.2'
+
+    - os: osx
+      osx_image: xcode6.4
+      language: objective-c
+      env: PYENV_VERSION='3.4.5' PYENV_VERSION_STRING='Python 3.4.5'
+
+    - os: osx
+      osx_image: xcode6.4
       language: objective-c
       env: PYENV_VERSION='3.3.6' PYENV_VERSION_STRING='Python 3.3.6'
 

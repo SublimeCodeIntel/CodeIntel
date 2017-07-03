@@ -1,0 +1,22 @@
+<codeintel version="2.0">
+  <file lang="JavaScript" mtime="42" path="scan_inputs/javascript/complex_return.js">
+    <scope ilk="blob" lang="JavaScript" name="complex_return.js" src="scan_inputs/javascript/complex_return.js">
+      <variable citdl="Object" line="2" lineend="11" name="Enumerable">
+        <scope ilk="function" line="3" lineend="10" name="sortBy" returns="this.map().sort().pluck()" signature="sortBy(iterator)">
+          <variable citdl="Enumerable" name="this" />
+          <variable ilk="argument" line="3" name="iterator" />
+          <scope attributes="__local__ private" ilk="function" line="4" lineend="6" name="(anonymous 1)" signature="(anonymous 1)(value, index)">
+            <variable ilk="argument" line="4" name="value" />
+            <variable ilk="argument" line="4" name="index" />
+          </scope>
+          <scope attributes="__local__ private" ilk="function" line="6" lineend="9" name="(anonymous 2)" returns="a" signature="(anonymous 2)(left, right)">
+            <variable ilk="argument" line="6" name="left" />
+            <variable ilk="argument" line="6" name="right" />
+            <variable attributes="__local__ private" citdl="left.criteria" line="7" name="a" />
+            <variable attributes="__local__ private" citdl="right.criteria" line="7" name="b" />
+          </scope>
+        </scope>
+      </variable>
+    </scope>
+  </file>
+</codeintel>

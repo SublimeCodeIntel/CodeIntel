@@ -107,22 +107,22 @@ class Parser(object):
         self.grammar = grammar or self.grammar
     
     def symbol(self, id, bp=0):
-        return self.grammar.symbol(d, bp)
+        return self.grammar.symbol(id, bp)
 
     def expression(self, rbp=0):
         t = self.token
-        self.token = next(self)
+        self.token = self.next()
         left = t.nud()
         while rbp < self.token.lbp:
             t = self.token
-            self.token = next(self)
+            self.token = self.next()
             left = t.led(left)
         return left
 
     def advance(self, id=None):
         if id and self.token.id != id:
             raise ParseError("Expected '%r', got '%r'" % (id, self.token))
-        self.token = next(self)
+        self.token = self.next()
 
     def gen_python_symbols(self, source):
         for id, value, begin, end in gen_python_tokens(source):
@@ -144,7 +144,7 @@ class Parser(object):
 
     def parse(self, source):
         self.next = self.gen_python_symbols(source).next
-        self.token = next(self)
+        self.token = self.next()
         result = self.expression()
         if self.token.id != "(end)":
             raise ParseError("Expected end, got '%r'" % self.token)
@@ -574,7 +574,7 @@ class PyExprParser(Parser):
     
     def parse_bare_arglist(self, source):
         self.next = self.gen_python_symbols(source.strip()).next
-        self.token = next(self)
+        self.token = self.next()
         arglist = self.token.argument_list()
         if self.token.id != "(end)":
             raise ParseError("Expected end, got '%r'" % self.token)

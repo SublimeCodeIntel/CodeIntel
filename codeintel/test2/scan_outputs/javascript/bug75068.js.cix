@@ -1,0 +1,31 @@
+<codeintel version="2.0">
+  <file lang="JavaScript" mtime="42" path="scan_inputs/javascript/bug75068.js">
+    <scope ilk="blob" lang="JavaScript" name="bug75068.js" src="scan_inputs/javascript/bug75068.js">
+      <scope ilk="function" line="5" lineend="10" name="case0" signature="case0()">
+        <variable attributes="__local__ private" citdl="Number" line="6" name="case0_xyz" />
+        <scope attributes="__local__ private" ilk="function" line="7" lineend="9" name="b" signature="b()" />
+      </scope>
+      <scope ilk="function" line="13" lineend="18" name="case1" signature="case1()">
+        <variable attributes="__local__ private" citdl="Number" line="14" name="case1_xyz" />
+        <scope attributes="__local__ private" ilk="function" line="15" lineend="17" name="(anonymous 1)" signature="(anonymous 1)()" />
+        <variable attributes="__local__ private" line="17" name="c" />
+      </scope>
+      <scope ilk="function" line="21" lineend="26" name="case2" signature="case2()">
+        <variable attributes="__local__ private" citdl="Number" line="22" name="case2_xyz" />
+        <scope attributes="__local__ private" ilk="function" line="23" lineend="25" name="(anonymous 2)" signature="(anonymous 2)()" />
+      </scope>
+      <scope ilk="function" line="29" lineend="35" name="case3" signature="case3(case3_xyz)">
+        <variable citdl="Number" ilk="argument" line="29" name="case3_xyz" />
+        <variable attributes="__local__ private" line="34" name="b" />
+      </scope>
+      <scope ilk="function" line="38" lineend="42" name="case4" signature="case4(case4_xyz)">
+        <variable citdl="Number" ilk="argument" line="38" name="case4_xyz" />
+        <scope attributes="__local__ private" ilk="function" line="39" lineend="41" name="(anonymous 5)" signature="(anonymous 5)()" />
+      </scope>
+      <scope ilk="function" line="45" lineend="47" name="case5" signature="case5(case5_xyz)">
+        <variable citdl="Number" ilk="argument" line="45" name="case5_xyz" />
+        <scope attributes="__local__ private" ilk="function" line="46" lineend="46" name="(anonymous 6)" signature="(anonymous 6)()" />
+      </scope>
+    </scope>
+  </file>
+</codeintel>

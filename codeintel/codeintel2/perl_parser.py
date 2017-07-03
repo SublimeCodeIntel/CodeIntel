@@ -683,11 +683,10 @@ class ModuleInfo:
             
     def printVariables(self, modInfo, currNode):
         if not hasattr(modInfo, 'aVar'): return
-        def sorter1(a,b):
-            return (cmp(a[0]['line'], b[0]['line']) or
-                    cmp(a[0]['name'].lower(), b[0]['name'].lower()))
+        def sorterKey(a):
+            return (a[0]['line'], a[0]['name'].lower())
                    
-        variables = sorted(modInfo.aVar.values(), sorter1)
+        variables = sorted(modInfo.aVar.values(), key=sorterKey)
         try:
             export_info = modInfo.export_info
         except:
@@ -927,27 +926,22 @@ class Parser:
             self.moduleInfo.printImports(mainInfo, moduleNode)
             self.moduleInfo.printVariables(mainInfo, moduleNode)
         
-        def sorter1(a,b):
+        def sorterKey(a):
             amod = innerModules.get(a)
-            bmod = innerModules.get(b)
-            aline = getattr(amod, 'line', None)
-            if aline:
-                bline = getattr(bmod, 'line', None)
-                if aline and bline: return cmp(aline, bline)
-            return cmp(getattr(amod, 'name', ""), getattr(bmod, 'name', ""))
-        
+            return (getattr(amod, 'line', None), getattr(amod, 'name', ""))
+
         # Sub-packages need to updated their parent blob name - bug 88814.
         # I.e. when parsing "XML/Simple.pm" the blob name is "Simple", but we
         #      need it be "XML::Simple" in this case. The bestPackageName is
         #      used to find the best matching name.
         keys = (x for x in self.moduleInfo.modules.keys() if x != 'main')
-        packages = sorted(keys, sorter1)
+        packages = sorted(keys, key=sorterKey)
         bestPackageName = None
         for k in packages:
             modInfo = innerModules[k]
 
             if name in k and \
-               (bestPackageName is None or len(bestPackageName) > k):
+               (bestPackageName is None or len(bestPackageName) > len(k)):
                 bestPackageName = k
                 moduleNode.set("name", bestPackageName)
 

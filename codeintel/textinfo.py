@@ -833,13 +833,13 @@ class TextInfo(object):
     def _get_xml_prolog_info_s(self, head_bytes):
         return self._get_xml_prolog_info(head_bytes,
             self._xml_prolog_pat_s,
-            b'<?xml',
+            "<?xml",
         )
 
     def _get_xml_prolog_info_b(self, head_bytes):
         return self._get_xml_prolog_info(head_bytes,
             self._xml_prolog_pat_b,
-            '<?xml',
+            b'<?xml',
         )
 
     _html_meta_tag_pat_s = re.compile(r"""
@@ -934,19 +934,19 @@ class TextInfo(object):
             "charset=",
             "",
             "'",
-            '"',
+            "\"",
         )
     def _get_http_content_type_info_b(self, head_bytes):
         return self._get_http_content_type_info(head_bytes,
             self._html_meta_tag_pat_b,
             self._html_attr_pat_b,
             self._http_content_type_splitter_b,
-            b"http-equiv",
-            b"content",
-            b"content-type",
-            b"charset=",
-            b"",
-            b"'",
+            b'http-equiv',
+            b'content',
+            b'content-type',
+            b'charset=',
+            b'',
+            b'\'',
             b'"',
         )
 
@@ -1035,7 +1035,7 @@ class TextInfo(object):
             self._doctype_decl_re_s,
             "<!DOCTYPE",
             "\s+",
-            ' ',
+            " ",
         )
 
     def _get_doctype_decl_info_b(self, head):
@@ -1043,7 +1043,7 @@ class TextInfo(object):
             self._doctype_decl_re_b,
             b"<!DOCTYPE",
             b"\s+",
-            b' ',
+            b" ",
         )
 
     _emacs_vars_head_pat_s = re.compile(r'-\*-\s*(.*?)\s*-\*-')
@@ -1116,13 +1116,13 @@ class TextInfo(object):
         if self._emacs_head_vars_cache_s is None:
             self._emacs_head_vars_cache_s = self._get_emacs_head_vars(head_bytes,
                 self._emacs_vars_head_pat_s,
-                '-*-',
-                '\n',
-                ':',
-                ';',
-                '"',
+                "-*-",
+                "\n",
+                ":",
+                ";",
+                "\"",
                 "'",
-                'mode',
+                "mode",
             )
         return self._emacs_head_vars_cache_s
 
@@ -1135,7 +1135,7 @@ class TextInfo(object):
                 b':',
                 b';',
                 b'"',
-                b"'",
+                b'\'',
                 b'mode',
             )
         return self._emacs_head_vars_cache_b
@@ -1271,21 +1271,21 @@ class TextInfo(object):
         return self._get_emacs_tail_vars(tail_bytes,
             self._emacs_vars_tail_pat_s,
             "Local Variables",
-            '\\',
-            ':',
-            ' ',
-            '"',
+            "\\",
+            ":",
+            " ",
+            "\"",
             "'",
         )
     def _get_emacs_tail_vars_b(self, tail_bytes):
         return self._get_emacs_tail_vars(tail_bytes,
             self._emacs_vars_tail_pat_b,
-            b"Local Variables",
+            b'Local Variables',
             b'\\',
             b':',
             b' ',
             b'"',
-            b"'",
+            b'\'',
         )
 
     # Note: It might nice if parser also gave which of 'vi, vim, ex' and
@@ -1373,10 +1373,10 @@ class TextInfo(object):
         if self._vi_vars_cache_s is None:
             self._vi_vars_cache_s = self._get_vi_vars(bytes,
                 self._vi_vars_pats_and_splitters_s,
-                ['vi:', 'ex:', 'vim:'],
-                '=',
-                ':',
-                '\\:',
+                ["vi:", "ex:", "vim:"],
+                "=",
+                ":",
+                "\\:",
             )
         return self._vi_vars_cache_s
 

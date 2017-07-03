@@ -125,7 +125,7 @@ class _SimpleElementPath:
         return default
     def findall(self, element, tag):
         if tag[:3] == ".//":
-            return element.getiterator(tag[3:])
+            return element.iter(tag[3:])
         result = []
         for elem in element:
             if elem.tag == tag:
@@ -417,15 +417,16 @@ class _ElementInterface:
     # @return A list or iterator containing all the matching elements.
     # @defreturn list or iterator
 
-    def getiterator(self, tag=None):
+    def iter(self, tag=None):
         nodes = []
         if tag == "*":
             tag = None
         if tag is None or self.tag == tag:
             nodes.append(self)
         for node in self._children:
-            nodes.extend(node.getiterator(tag))
+            nodes.extend(node.iter(tag))
         return nodes
+    getiterator = iter
 
 # compatibility
 _Element = _ElementInterface
@@ -596,9 +597,10 @@ class ElementTree:
     # @return An iterator.
     # @defreturn iterator
 
-    def getiterator(self, tag=None):
+    def iter(self, tag=None):
         assert self._root is not None
-        return self._root.getiterator(tag)
+        return self._root.iter(tag)
+    getiterator = iter
 
     ##
     # Finds the first toplevel element with given tag.
@@ -660,16 +662,16 @@ class ElementTree:
         if not encoding:
             encoding = "us-ascii"
         elif encoding != "utf-8" and encoding != "us-ascii":
-            file.write("<?xml version='1.0' encoding='%s'?>\n" % encoding)
+            file.write(b'<?xml version="1.0" encoding="%s"?>\n' % encoding)
         self._write(file, self._root, encoding, {})
 
     def _write(self, file, node, encoding, namespaces):
         # write XML to file
         tag = node.tag
         if tag is Comment:
-            file.write("<!-- %s -->" % _escape_cdata(node.text, encoding))
+            file.write(b'<!-- %s -->' % _escape_cdata(node.text, encoding))
         elif tag is ProcessingInstruction:
-            file.write("<?%s?>" % _escape_cdata(node.text, encoding))
+            file.write(b'<?%s?>' % _escape_cdata(node.text, encoding))
         else:
             items = list(node.items())
             xmlns_items = [] # new namespaces in this scope
@@ -679,7 +681,7 @@ class ElementTree:
                     if xmlns: xmlns_items.append(xmlns)
             except TypeError:
                 _raise_serialization_error(tag)
-            file.write("<" + _encode(tag, encoding))
+            file.write(b'<' + _encode(tag, encoding))
             if items or xmlns_items:
                 items.sort() # lexical order
                 for k, v in items:
@@ -695,20 +697,20 @@ class ElementTree:
                             if xmlns: xmlns_items.append(xmlns)
                     except TypeError:
                         _raise_serialization_error(v)
-                    file.write(" %s=\"%s\"" % (_encode(k, encoding),
-                                               _escape_attrib(v, encoding)))
+                    file.write(b' %s="%s"' % (_encode(k, encoding),
+                                             _escape_attrib(v, encoding)))
                 for k, v in xmlns_items:
-                    file.write(" %s=\"%s\"" % (_encode(k, encoding),
-                                               _escape_attrib(v, encoding)))
+                    file.write(b' %s="%s"' % (_encode(k, encoding),
+                                             _escape_attrib(v, encoding)))
             if node.text or len(node):
-                file.write(">")
+                file.write(b'>')
                 if node.text:
                     file.write(_escape_cdata(node.text, encoding))
                 for n in node:
                     self._write(file, n, encoding, namespaces)
-                file.write("</" + _encode(tag, encoding) + ">")
+                file.write(b'</' + _encode(tag, encoding) + ">")
             else:
-                file.write(" />")
+                file.write(b' />')
             for k, v in xmlns_items:
                 del namespaces[v]
         if node.tail:
@@ -802,7 +804,7 @@ def _encode_entity(text, pattern=_escape):
 # the following functions assume an ascii-compatible encoding
 # (or "utf-16")
 
-def _escape_cdata(text, encoding=None, replace=six.text_type.replace):
+def _escape_cdata(text, encoding=None):
     # escape character data
     try:
         if encoding:
@@ -810,14 +812,14 @@ def _escape_cdata(text, encoding=None, replace=six.text_type.replace):
                 text = _encode(text, encoding)
             except UnicodeError:
                 return _encode_entity(text)
-        text = replace(text, "&", "&amp;")
-        text = replace(text, "<", "&lt;")
-        text = replace(text, ">", "&gt;")
+        text = text.replace(b'&', b'&amp;')
+        text = text.replace(b'<', b'&lt;')
+        text = text.replace(b'>', b'&gt;')
         return text
     except (TypeError, AttributeError):
         _raise_serialization_error(text)
 
-def _escape_attrib(text, encoding=None, replace=six.text_type.replace):
+def _escape_attrib(text, encoding=None):
     # escape attribute value
     try:
         if encoding:
@@ -825,13 +827,13 @@ def _escape_attrib(text, encoding=None, replace=six.text_type.replace):
                 text = _encode(text, encoding)
             except UnicodeError:
                 return _encode_entity(text, _escape_attrib_pat)
-        text = replace(text, "&", "&amp;")
-        text = replace(text, "'", "&apos;") # FIXME: overkill
-        text = replace(text, "\"", "&quot;")
-        text = replace(text, "<", "&lt;")
-        text = replace(text, ">", "&gt;")
-        text = replace(text, "\n", "&#xA;")
-        text = replace(text, "\r", "&#xD;")
+        text = text.replace(b'&', b'&amp;')
+        text = text.replace(b'\'', b'&apos;')  # FIXME: overkill
+        text = text.replace(b'"', b'&quot;')
+        text = text.replace(b'<', b'&lt;')
+        text = text.replace(b'>', b'&gt;')
+        text = text.replace(b'\n', b'&#xA;')
+        text = text.replace(b'\r', b'&#xD;')
         return text
     except (TypeError, AttributeError):
         _raise_serialization_error(text)
@@ -984,7 +986,7 @@ def XMLID(text):
     parser.feed(text)
     tree = parser.close()
     ids = {}
-    for elem in tree.getiterator():
+    for elem in tree.iter():
         id = elem.get("id")
         if id:
             ids[id] = elem
@@ -1147,19 +1149,12 @@ class XMLTreeBuilder:
             parser.StartElementHandler = self._start_list
         except AttributeError:
             pass
-        encoding = None
-        if not parser.returns_unicode:
-            encoding = "utf-8"
+        # encoding = None
+        # if not parser.returns_unicode:
+        #     encoding = "utf-8"
         # target.xml(encoding, None)
         self._doctype = None
         self.entity = {}
-
-    def _fixtext(self, text):
-        # convert text string to ascii, if possible
-        try:
-            return _encode(text, "ascii")
-        except UnicodeError:
-            return text
 
     def _fixname(self, key):
         # expand qname, and convert name string to ascii, if possible
@@ -1169,7 +1164,7 @@ class XMLTreeBuilder:
             name = key
             if "}" in name:
                 name = "{" + name
-            self._names[key] = name = self._fixtext(name)
+            self._names[key] = name
         return name
 
     def _start(self, tag, attrib_in):
@@ -1177,7 +1172,7 @@ class XMLTreeBuilder:
         tag = fixname(tag)
         attrib = {}
         for key, value in attrib_in.items():
-            attrib[fixname(key)] = self._fixtext(value)
+            attrib[fixname(key)] = value
         return self._target.start(tag, attrib)
 
     def _start_list(self, tag, attrib_in):
@@ -1186,11 +1181,11 @@ class XMLTreeBuilder:
         attrib = {}
         if attrib_in:
             for i in range(0, len(attrib_in), 2):
-                attrib[fixname(attrib_in[i])] = self._fixtext(attrib_in[i+1])
+                attrib[fixname(attrib_in[i])] = attrib_in[i+1]
         return self._target.start(tag, attrib)
 
     def _data(self, text):
-        return self._target.data(self._fixtext(text))
+        return self._target.data(text)
 
     def _end(self, tag):
         return self._target.end(self._fixname(tag))

@@ -601,4 +601,4 @@ css2_system_colors = {
 #for attr, values in CSS_ATTR_DICT.items():
 #    if '#' in values or 'rbg(' in values:
 #        CSS_ATTR_DICT[attr] = sorted(values + css2_system_colors.keys(),
-#                                     cmp=CompareNPunctLast)
+#                                     key=CompareNPunctLast)

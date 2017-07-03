@@ -40,6 +40,7 @@
 
 from __future__ import absolute_import
 from __future__ import print_function
+from __future__ import division
 import bisect
 import os
 from os.path import basename
@@ -393,7 +394,7 @@ def unmark_text(markedup_text):
     See the matching markup_text() below.
     """
     splitter = re.compile(r"(<(?:[\|\+\$\[\]<]|\d+)>)")
-    text = u"" if isinstance(markup_text, six.text_type) else ""
+    text = ""
     data = {}
     posNameFromSymbol = {
         "<|>": "pos",
@@ -402,10 +403,9 @@ def unmark_text(markedup_text):
         "<[>": "start_selection",
         "<]>": "end_selection",
     }
+
     def byte_length(text):
-        if isinstance(text, six.text_type):
-            return len(text.encode("utf-8"))
-        return len(text)
+        return len(text.encode("utf-8"))
 
     bracketed_digits_re = re.compile(r'<\d+>$')
     for token in splitter.split(markedup_text):
@@ -433,16 +433,13 @@ def markup_text(text, pos=None, trg_pos=None, start_pos=None):
     if start_pos is not None: positions_and_markers.append((start_pos, '<$>'))
     positions_and_markers.sort()
 
-    if isinstance(text, six.text_type):
-        # codeintel is now UTF-8 internally; use that for tests too
-        text = text.encode("utf-8")
     m_text = ""
     m_pos = 0
     for position, marker in positions_and_markers:
         m_text += text[m_pos:position] + marker
         m_pos = position
     m_text += text[m_pos:]
-    return m_text.decode("utf-8")
+    return m_text
 
 def lines_from_pos(unmarked_text, positions):
     """Get 1-based line numbers from positions
@@ -523,7 +520,7 @@ def banner(text, ch='=', length=78):
         return text
     else:
         remain = length - (len(text) + 2)
-        prefix_len = remain / 2
+        prefix_len = remain // 2
         suffix_len = remain - prefix_len
         if len(ch) == 1:
             prefix = ch * prefix_len
@@ -765,11 +762,8 @@ def OrdPunctLast(value):
             result.append(ch)
     return "".join(result)
 
-def CompareNPunctLast(value1, value2):
-    # value 1 is smaller, return negative
-    # value 1 is equal, return 0
-    # value 1 is larger, return positive
-    return cmp(OrdPunctLast(value1), OrdPunctLast(value2))
+def CompareNPunctLast(value):
+    return OrdPunctLast(value)
 
 
 # Utility function to make a lookup dictionary
@@ -785,7 +779,7 @@ def make_short_name_dict(names, length=3):
                 l.append(name)
         #pprint(outdict)
     for values in outdict.values():
-        values.sort(CompareNPunctLast)
+        values.sort(key=CompareNPunctLast)
     return outdict
 
 def makePerformantLogger(logger):

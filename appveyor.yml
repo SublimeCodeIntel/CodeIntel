@@ -15,47 +15,41 @@ environment:
     # The list here is complete (excluding Python 2.6, which
     # isn't covered by this document) at the time of writing.
 
-    - PYTHON: "C:\\Python26"
-      PYTHON_VERSION: "2.6"
-
+    - PYTHON: "C:\\Python27-x64"
+      PYTHON_VERSION: "2.7"
+      PYTHON_ARCH: "64"
     - PYTHON: "C:\\Python27"
       PYTHON_VERSION: "2.7"
 
-    - PYTHON: "C:\\Python33"
-      PYTHON_VERSION: "3.3"
-
-    - PYTHON: "C:\\Python34"
-      PYTHON_VERSION: "3.4"
-
-    - PYTHON: "C:\\Python35"
-      PYTHON_VERSION: "3.5"
-
+    - PYTHON: "C:\\Python36-x64"
+      PYTHON_VERSION: "3.6"
+      PYTHON_ARCH: "64"
     - PYTHON: "C:\\Python36"
       PYTHON_VERSION: "3.6"
 
     - PYTHON: "C:\\Python26-x64"
       PYTHON_VERSION: "2.6"
       PYTHON_ARCH: "64"
-
-    - PYTHON: "C:\\Python27-x64"
-      PYTHON_VERSION: "2.7"
-      PYTHON_ARCH: "64"
-
-    - PYTHON: "C:\\Python33-x64"
-      PYTHON_VERSION: "3.3"
-      PYTHON_ARCH: "64"
-
-    - PYTHON: "C:\\Python34-x64"
-      PYTHON_VERSION: "3.4"
-      PYTHON_ARCH: "64"
+    - PYTHON: "C:\\Python26"
+      PYTHON_VERSION: "2.6"
 
     - PYTHON: "C:\\Python35-x64"
       PYTHON_VERSION: "3.5"
       PYTHON_ARCH: "64"
+    - PYTHON: "C:\\Python35"
+      PYTHON_VERSION: "3.5"
 
-    - PYTHON: "C:\\Python36-x64"
-      PYTHON_VERSION: "3.6"
+    - PYTHON: "C:\\Python34-x64"
+      PYTHON_VERSION: "3.4"
       PYTHON_ARCH: "64"
+    - PYTHON: "C:\\Python34"
+      PYTHON_VERSION: "3.4"
+
+    - PYTHON: "C:\\Python33-x64"
+      PYTHON_VERSION: "3.3"
+      PYTHON_ARCH: "64"
+    - PYTHON: "C:\\Python33"
+      PYTHON_VERSION: "3.3"
 
 install:
   # Set path again, need to find a way to avoid doing this again

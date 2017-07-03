@@ -3612,8 +3612,10 @@ static PyMethodDef xmlparser_methods[] = {
 static PyObject*
 xmlparser_getattro(XMLParserObject* self, PyObject* nameobj)
 {
+    PyObject* res;
+    char* attr;
+
     if (PyUnicode_Check(nameobj)) {
-        PyObject* res;
         if (PyUnicode_CompareWithASCIIString(nameobj, "entity") == 0)
             res = self->entity;
         else if (PyUnicode_CompareWithASCIIString(nameobj, "target") == 0)
@@ -3635,6 +3637,31 @@ xmlparser_getattro(XMLParserObject* self, PyObject* nameobj)
         Py_INCREF(res);
         return res;
     }
+
+    else if (PyBytes_Check(nameobj)) {
+        attr = PyBytes_AS_STRING(nameobj);
+        if (strcmp(attr, "entity") == 0)
+            res = self->entity;
+        else if (strcmp(attr, "target") == 0)
+            res = self->target;
+        else if (strcmp(attr, "version") == 0) {
+            return PyUnicode_FromFormat(
+                "Expat %d.%d.%d", XML_MAJOR_VERSION,
+                XML_MINOR_VERSION, XML_MICRO_VERSION);
+        }
+        else if (strcmp(attr, "CurrentLineNumber") == 0)
+            res = PyLong_FromLong(XML_GetCurrentLineNumber(self->parser));
+        else if (strcmp(attr, "CurrentColumnNumber") == 0)
+            res = PyLong_FromLong(XML_GetCurrentColumnNumber(self->parser));
+        else if (strcmp(attr, "CurrentByteIndex") == 0)
+            res = PyLong_FromLong(XML_GetCurrentByteIndex(self->parser));
+        else
+            goto generic;
+
+        Py_INCREF(res);
+        return res;
+    }
+
   generic:
     return PyObject_GenericGetAttr((PyObject*) self, nameobj);
 }

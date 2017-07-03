@@ -882,7 +882,7 @@ for attr, details in CSS3_DATA.items():
                     if i > 0:
                         attr_line = "        " + attr_line
                     desc_lines.append(attr_line)
-        CSS3_SPECIFIC_CALLTIP_DICT[attr] = "\n".join(desc_lines).encode("ascii", 'replace')
+        CSS3_SPECIFIC_CALLTIP_DICT[attr] = "\n".join(desc_lines)
 
 removed_css2_items = ["azimuth", "clip", "pointer-events"]
 
@@ -1077,4 +1077,4 @@ css3_color_names = [
 #for attr, values in CSS_ATTR_DICT.items():
 #    if '#' in values or 'rbg(' in values:
 #        CSS_ATTR_DICT[attr] = sorted(values + css3_color_names,
-#                                     cmp=CompareNPunctLast)
+#                                     key=CompareNPunctLast)

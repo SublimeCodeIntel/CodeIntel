@@ -2510,7 +2510,7 @@ class JavaScriptCiler:
             # Copy over non-argument variables from the function to the class.
             # All the local variables are closures and should be in the class
             # scope.
-            for varName, v in jsfunc.variables.items():
+            for varName, v in list(jsfunc.variables.items()):
                 if not isinstance(v, JSArgument):
                     # Add to class and remove from the function
                     v.setParent(jsclass)
@@ -2524,15 +2524,15 @@ class JavaScriptCiler:
             parent.variables.pop(var.name, None)
 
         # Copy across all non-local members, bug 88549.
-        for name, jsobject in jsfunc.variables.items():
+        for name, jsobject in list(jsfunc.variables.items()):
             if '__local__' not in jsobject.attributes and not isinstance(jsobject, JSArgument):
                 jsclass.variables[name] = jsobject
                 jsfunc.variables.pop(name, None)
-        for name, jsobject in jsfunc.functions.items():
+        for name, jsobject in list(jsfunc.functions.items()):
             if '__local__' not in jsobject.attributes:
                 jsclass.functions[name] = jsobject
                 jsfunc.functions.pop(name, None)
-        for name, jsobject in jsfunc.classes.items():
+        for name, jsobject in list(jsfunc.classes.items()):
             if '__local__' not in jsobject.attributes:
                 jsclass.classes[name] = jsobject
                 jsfunc.classes.pop(name, None)
@@ -3601,7 +3601,7 @@ class JavaScriptCiler:
         d_members = getattr(jsother, "members", {})
         d_variables = getattr(jsother, "variables", {})
         
-        for name, jsobj in d_variables.items():
+        for name, jsobj in list(d_variables.items()):
             if name in d_members:
                 # Decide which one to keep then, remove the variable and then
                 # replace the member with the best choice.

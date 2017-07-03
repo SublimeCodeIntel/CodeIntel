@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
+import glob
 
 from setuptools import setup, Extension
 
@@ -208,7 +209,9 @@ cielementtree_ext = Extension(
 
 install_requires = [
     'apsw',
+    'applib',
     'chardet',
+    'cmdln',
     'inflector',
     'six',
     'zope.cachedescriptors',
@@ -222,6 +225,20 @@ if sys.version_info[0] == 2:
 else:
     install_requires.append('libclang-py3')
 
+
+def package_files(directory):
+    paths = []
+    for directory in glob.glob(directory):
+        if os.path.isdir(directory):
+            if os.path.isdir(directory):
+                for path, directories, filenames in os.walk(directory):
+                    for filename in filenames:
+                        paths.append(os.path.join('..', path, filename))
+        else:
+            paths.append(os.path.join('..', directory))
+    return paths
+
+
 setup(
     name="CodeIntel",
     version=VERSION,
@@ -232,8 +249,10 @@ Komodo Editor supports for Code Intelligence (CIX, CodeIntel2):
 
 Go, JavaScript, Mason, XBL, XUL, RHTML, SCSS, Python, HTML, Ruby, Python3, XML,
 Sass, XSLT, Django, HTML5, Perl, CSS, Twig, Less, Smarty, Node.js, Tcl,
-TemplateToolkit, PHP.""",
+TemplateToolkit, PHP, C/C++, Objective-C.""",
+    url="https://github.com/Kronuz/CodeIntel",
     author="Komodo Edit Team",
+    author_email="german.mb@gmail.com",
     maintainer="German Mendez Bravo (Kronuz)",
     maintainer_email="german.mb@gmail.com",
     license="MPL 1.1",
@@ -265,7 +284,11 @@ TemplateToolkit, PHP.""",
         sgmlop_ext,
     ],
     entry_points={
-        'console_scripts': ['codeintel = codeintel.__main__:main'],
+        'console_scripts': [
+            'codeintel = codeintel.__main__:main',
+            'ci2 = codeintel.ci2:main',
+            'cipref = codeintel.cipref:main',
+        ],
     },
     packages=[
         'codeintel',
@@ -276,14 +299,19 @@ TemplateToolkit, PHP.""",
         'codeintel.SilverCity',
         'codeintel.cElementTree',
         'codeintel.ciElementTree',
+        'codeintel.test2',
     ],
     package_data={
-        'codeintel.codeintel2': [
-            'lexers/*.lexres',
-            'catalogs/*.cix',
-            'stdlibs/*.cix',
-            'golib/*.go',
-            'lib_srcs/*/*/*',
-        ],
+        '': (
+            package_files('codeintel/codeintel2/lexers/*.lexres') +
+            package_files('codeintel/codeintel2/catalogs/*.cix') +
+            package_files('codeintel/codeintel2/stdlibs/*.cix') +
+            package_files('codeintel/codeintel2/golib') +
+            package_files('codeintel/codeintel2/lib_srcs') +
+            package_files('codeintel/test2/scan_inputs') +
+            package_files('codeintel/test2/scan_outputs') +
+            package_files('codeintel/test2/bits') +
+            package_files('codeintel/catalogs')
+        )
     },
 )

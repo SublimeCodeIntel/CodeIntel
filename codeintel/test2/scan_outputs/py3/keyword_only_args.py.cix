@@ -1,0 +1,30 @@
+<codeintel version="2.0">
+  <file lang="Python3" mtime="42" path="scan_inputs/py3/keyword_only_args.py">
+    <scope ilk="blob" lang="Python3" name="keyword_only_args" src="scan_inputs/py3/keyword_only_args.py">
+      <scope ilk="function" line="3" lineend="4" name="sortwords" signature="sortwords(*wordlist)">
+        <variable attributes="varargs" ilk="argument" line="3" name="wordlist" />
+      </scope>
+      <scope ilk="function" line="6" lineend="7" name="compare" signature="compare(a, b, **kwargs)">
+        <variable ilk="argument" line="6" name="a" />
+        <variable ilk="argument" line="6" name="b" />
+        <variable attributes="kwargs" ilk="argument" line="6" name="kwargs" />
+      </scope>
+      <scope ilk="function" line="9" lineend="10" name="f" signature="f(a=1)">
+        <variable citdl="int" ilk="argument" line="9" name="a" />
+      </scope>
+      <scope classrefs="object" ilk="class" line="12" lineend="13" name="Haulable" />
+      <scope classrefs="object" ilk="class" line="15" lineend="16" name="PackAnimal" />
+      <scope classrefs="object" ilk="class" line="18" lineend="19" name="Distance" />
+      <scope classrefs="object" ilk="class" line="21" lineend="26" name="Pack">
+        <scope ilk="function" line="22" lineend="23" name="sub" returns="str" signature="sub()">
+          <variable citdl="Pack" ilk="argument" line="22" name="self" />
+        </scope>
+        <scope ilk="function" line="25" lineend="26" name="haul" signature="haul(item, *vargs)">
+          <variable citdl="Pack" ilk="argument" line="25" name="self" />
+          <variable ilk="argument" line="25" name="item" />
+          <variable attributes="varargs" ilk="argument" line="25" name="vargs" />
+        </scope>
+      </scope>
+    </scope>
+  </file>
+</codeintel>

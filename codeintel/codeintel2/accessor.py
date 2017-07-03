@@ -261,7 +261,7 @@ class SilverCityAccessor(Accessor):
             data = []
             byte_offset = 0
             char_offset = 0
-            for match in re.finditer(r"\r\n|\r|\n", self.content):
+            for match in re.finditer(r"\r\n|\r|\n|$", self.content):
                 char_end = match.end()
                 char_length = char_end - char_offset
                 line = self.content[char_offset:char_end]

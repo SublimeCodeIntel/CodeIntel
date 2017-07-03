@@ -960,11 +960,11 @@ class PHPLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
         # Use a marker to separate the start of output from possible
         # leading lines of PHP loading errors/logging.
         marker = "--- Start of Good Stuff ---"
-        info_cmd = (r'<?php '
-                    + r'echo("%s\n");' % marker
-                    + r'echo(phpversion()."\n");'
-                    + r'echo(ini_get("include_path")."\n");'
-                    + r' ?>')
+        info_cmd = (b'<?php '
+                    + b'echo("%s\n");' % marker.encode('utf-8')
+                    + b'echo(phpversion()."\n");'
+                    + b'echo(ini_get("include_path")."\n");'
+                    + b' ?>')
         
         argv = [php]
         envvars = env.get_all_envvars()
@@ -1367,15 +1367,12 @@ TYPE_CLASS = 7
 TYPE_PARENT = 8
 
 
-def _sortByLineCmp(val1, val2):
-    try:
-    #if hasattr(val1, "line") and hasattr(val2, "line"):
-        return cmp(val1.linestart, val2.linestart)
-    except AttributeError:
-        return cmp(val1, val2)
+def _sortByLineKey(val):
+    return getattr(val, 'linestart', val)
+
 
 def sortByLine(seq):
-    seq.sort(_sortByLineCmp)
+    seq.sort(key=_sortByLineKey)
     return seq
 
 

@@ -9,6 +9,8 @@ for PYBIN in /opt/python/cp${PYTHON_VERSION}*/bin; do
 done
 
 # Bundle external shared libraries into the wheels
-for whl in dist/*.whl; do
+mv dist dist.orig
+mkdir /io/dist
+for whl in dist.orig/*.whl; do
     auditwheel repair "$whl" -w /io/dist/
 done

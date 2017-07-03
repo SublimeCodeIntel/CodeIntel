@@ -180,11 +180,11 @@ class iterparse:
         for event in events:
             yield event
         del events[:]
-        try:
-            self.root = p.close()
-        except SyntaxError as e:
-            # if we had a previous syntax error, keep it
-            if not self.err:
+        if not self.err:
+            try:
+                self.root = p.close()
+            except SyntaxError as e:
+                # if we had a previous syntax error, keep it
                 self.err = e
                 self.err_info = (p.CurrentLineNumber, p.CurrentColumnNumber, p.CurrentByteIndex)
         for event in events:

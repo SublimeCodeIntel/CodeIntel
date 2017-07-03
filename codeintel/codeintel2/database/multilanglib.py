@@ -431,7 +431,7 @@ class MultiLangTopLevelNameIndex(object):
     def merge(self):
         """Merge all on-deck changes with `self.data'."""
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if res_data_pivot is None:
                 res_data_pivot = self._pivot_res_data(res_data)
             # res_data_pivot: {lang -> ilk -> toplevelname -> blobnames}
@@ -450,7 +450,7 @@ class MultiLangTopLevelNameIndex(object):
     def merge_expired(self, now):
         """Merge expired on-deck changes with `self.data'."""
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if now - timestamp < self.timeout:
                 continue
 
@@ -543,7 +543,7 @@ class MultiLangTopLevelNameIndex(object):
 
         # ...on-deck items
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if lang not in res_data:
                 continue
             if res_data_pivot is None:
@@ -594,7 +594,7 @@ class MultiLangTopLevelNameIndex(object):
         blobnames = set()
         # First check on-deck items.
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if lang not in res_data:
                 continue
             if res_data_pivot is None:

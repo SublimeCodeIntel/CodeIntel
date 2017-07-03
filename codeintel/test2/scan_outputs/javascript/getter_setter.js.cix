@@ -1,0 +1,41 @@
+<codeintel version="2.0">
+  <file lang="JavaScript" mtime="42" path="scan_inputs/javascript/getter_setter.js">
+    <scope ilk="blob" lang="JavaScript" name="getter_setter.js" src="scan_inputs/javascript/getter_setter.js">
+      <scope ilk="class" line="6" lineend="8" name="jsclass">
+        <scope attributes="__ctor__" ilk="function" line="6" lineend="8" name="jsclass" signature="jsclass()">
+          <variable citdl="jsclass" name="this" />
+        </scope>
+        <variable citdl="Number" line="7" name="_num" />
+        <scope attributes="__local__ private" ilk="function" line="9" lineend="9" name="(anonymous 1)" returns="this._num" signature="(anonymous 1)()">
+          <variable citdl="jsclass" name="this" />
+          <caller attributes="__hidden__" citdl="jsclass.prototype.__defineGetter__" line="9" pos="1" />
+        </scope>
+        <variable line="9" name="num" />
+        <scope attributes="__local__ private" ilk="function" line="10" lineend="12" name="(anonymous 2)" signature="(anonymous 2)(new_num)">
+          <variable citdl="jsclass" name="this" />
+          <variable ilk="argument" line="10" name="new_num" />
+          <variable citdl="new_num" line="11" name="_num" />
+          <caller attributes="__hidden__" citdl="jsclass.prototype.__defineSetter__" line="12" pos="1" />
+        </scope>
+      </scope>
+      <scope classrefs="Object" ilk="class" line="18" lineend="23" name="myclass">
+        <scope attributes="__ctor__" ilk="function" line="18" lineend="20" name="myclass" signature="myclass(initial_rows)">
+          <variable citdl="myclass" name="this" />
+          <variable ilk="argument" line="18" name="initial_rows" />
+        </scope>
+        <variable citdl="initial_rows" line="19" name="_rows" />
+        <variable line="22" name="rowCount" />
+      </scope>
+      <scope classrefs="Object" ilk="class" line="29" lineend="34" name="thirdclass">
+        <scope attributes="__ctor__" ilk="function" line="29" lineend="31" name="thirdclass" signature="thirdclass()">
+          <variable citdl="thirdclass" name="this" />
+        </scope>
+        <variable citdl="String" line="30" name="_name" />
+        <variable line="33" name="name" />
+      </scope>
+      <variable citdl="Object" line="40" lineend="40" name="foo">
+        <variable line="46" name="prop" />
+      </variable>
+    </scope>
+  </file>
+</codeintel>

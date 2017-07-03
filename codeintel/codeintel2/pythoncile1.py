@@ -834,7 +834,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             isinstance(rhsNode, ast.Call) and
             rhsNode.args and
             isinstance(rhsNode.args[0], ast.Name) and
-            variable["name"] == (rhsNode.args[0].arg if six.PY3 else rhsNode.args[0].id)
+            variable["name"] == rhsNode.args[0].id
         ):
             # a speial case for 2.4-styled decorators
             return
@@ -1199,7 +1199,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         """
         s = None
         if isinstance(node, ast.Name):
-            s = node.arg if six.PY3 else node.id
+            s = node.id
         elif isinstance(node, ast.Num):
             s = repr(node.n)
         elif isinstance(node, (ast.Str, getattr(ast, 'Bytes', ast.Str))):
@@ -1224,12 +1224,19 @@ class AST2CIXVisitor(ast.NodeVisitor):
             s += "("
             allargs = []
             for arg in node.args:
-                allargs.append(self._getExprRepr(arg))
+                ast_Starred = getattr(ast, 'Starred', None)
+                if ast_Starred and isinstance(arg, ast_Starred):  # Python 3.5 (Starred):
+                    allargs.append("*" + self._getExprRepr(arg.value))
+                else:
+                    allargs.append(self._getExprRepr(arg))
             for keyword in node.keywords:
-                allargs.append(keyword.arg)
-            if node.starargs:
+                if keyword.arg:
+                    allargs.append(keyword.arg)
+                else:  # Python 3.5 (kwargs):
+                    allargs.append("**" + self._getExprRepr(keyword.value))
+            if getattr(node, 'starargs', None):
                 allargs.append("*" + self._getExprRepr(node.starargs))
-            if node.kwargs:
+            if getattr(node, 'kwargs', None):
                 allargs.append("**" + self._getExprRepr(node.kwargs))
             s += ",".join(allargs)
             s += ")"
@@ -1381,7 +1388,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         """
         s = None
         if isinstance(node, ast.Name):
-            s = node.arg if six.PY3 else node.id
+            s = node.id
         elif isinstance(node, ast.Num):
             s = repr(node.n)
         elif isinstance(node, (ast.Str, getattr(ast, 'Bytes', ast.Str))):

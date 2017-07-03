@@ -85,12 +85,8 @@ def getcollector():
         a("newlines" ,                   "[ \t]*(\r\n|\r|\n)")
     return g_collector
 
-def _cmpLen(a, b):
-    al = len(a)
-    bl = len(b)
-    if al>bl: return -1
-    if al==bl: return cmp(a, b)
-    return 1
+def _keyLen(a, b):
+    return (len(a), a)
 
 def strip_quotes(str):
     if not str:
@@ -166,7 +162,7 @@ class Catalog:
 
     # Support functions for matching data to a catalog
     def _longestMatch(self, needle, haystack):
-        haystack.sort(_cmpLen)
+        haystack.sort(key=_keyLen)
         for straw in haystack:
             if needle.find(straw) == 0:
                 return straw
@@ -181,7 +177,7 @@ class Catalog:
     def _getDelegates(self, id, delegates):
         if id not in delegates:
             return None
-        entries = sorted(delegates[id].keys(), _cmpLen)
+        entries = sorted(delegates[id].keys(), key=_keyLen)
         return [delegates[id][d].catalog for d in entries]
 
     def getSystemRewrite(self, systemId):
@@ -203,7 +199,7 @@ class Catalog:
         return self._getDelegates(uri, self.delegateuri)
 
 class NamespaceParser(XMLTreeBuilder.FancyTreeBuilder):
-    _qname = re.compile("{(.*?)}(.*)")
+    _qname = re.compile(r'{(.*?)}(.*)')
     def start(self, element):
         element.namespaces = self.namespaces[:]
         qn = self._qname.match(element.tag)
@@ -221,7 +217,7 @@ class XMLCatalog(Catalog):
         self.tree = ElementTree.parse(self.uri, NamespaceParser())
         self.root = self.tree.getroot()
         if self.root.tagName != "catalog":
-            raise "Invalid catalog file [%s] root tag [%s]" % (self.uri, self.root.tagName)
+            raise ValueError("Invalid catalog file [%s] root tag [%s]" % (self.uri, self.root.tagName))
         self.parent_map = dict((c, p) for p in self.tree.getiterator() for c in p)
         self._parseNode(self.root)
 

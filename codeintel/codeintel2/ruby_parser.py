@@ -210,8 +210,8 @@ _inflector = None
 def get_inflector():
     global _inflector
     if _inflector is None:
-        import inflector.Inflector
-        _inflector = inflector.Inflector.Inflector()
+        from inflector import Inflector
+        _inflector = Inflector()
     return _inflector
 
 class Parser:

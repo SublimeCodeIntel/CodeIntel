@@ -526,7 +526,7 @@ class LangTopLevelNameIndex(object):
     def merge(self):
         """Merge all on-deck changes with `self.data'."""
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if res_data_pivot is None:
                 res_data_pivot = self._pivot_res_data(res_data)
             # res_data_pivot: {ilk -> toplevelname -> blobnames}
@@ -543,7 +543,7 @@ class LangTopLevelNameIndex(object):
     def merge_expired(self, now):
         """Merge expired on-deck changes with `self.data'."""
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if now - timestamp < self.timeout:
                 continue
 
@@ -625,7 +625,7 @@ class LangTopLevelNameIndex(object):
 
         # ...on-deck items
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if res_data_pivot is None:
                 res_data_pivot = self._on_deck[base][2] \
                     = self._pivot_res_data(res_data)
@@ -668,7 +668,7 @@ class LangTopLevelNameIndex(object):
         blobnames = set()
         # First check on-deck items.
         for base, (timestamp, res_data,
-                   res_data_pivot) in self._on_deck.items():
+                   res_data_pivot) in list(self._on_deck.items()):
             if res_data_pivot is None:
                 res_data_pivot = self._on_deck[base][2] \
                     = self._pivot_res_data(res_data)
