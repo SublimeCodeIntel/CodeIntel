@@ -85,10 +85,10 @@ class CSSLintTest(CodeIntelTestCase):
         # Fails to parse @keyframes directives.
         join(_skin_dir, "komodo.p.css"),
     ]
-    def _walk_skin_files(self, data, dirname, fnames):
-        for fname in fnames:
+    def _walk_skin_files(self, dirpath, dirnames):
+        for fname in dirnames:
             if fname.endswith(".css"):
-                fpath = join(dirname, fname)
+                fpath = join(dirpath, fname)
                 if fpath in self._skipSkinFiles:
                     continue
                 fd = open(fpath, 'rb')
@@ -102,10 +102,12 @@ class CSSLintTest(CodeIntelTestCase):
     def test_komodo_skin_files_01(self):
         # Test these under CSS, SCSS, and Less
         self.assertTrue(os.path.exists(join(self._skin_dir, "codeintel.p.css")), "%s: missing codeintel.p.css" % self._skin_dir)
-        os.path.walk(self._skin_dir, self._walk_skin_files, None)
+        for dirpath, dirnames in os.walk(self._skin_dir):
+            self._walk_skin_files(dirpath, dirnames)
 
     def test_komodo_skin_files_02(self):
-        os.path.walk(self._modules_dir, self._walk_skin_files, None)
+        for dirpath, dirnames in os.walk(self._modules_dir):
+            self._walk_skin_files(dirpath, dirnames)
         
     def test_jezdez(self):
         path = join(self.test_dir, "bits", "bad_css_files", "jezdez-reset-fonts-grids.css")

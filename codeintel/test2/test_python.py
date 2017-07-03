@@ -93,7 +93,7 @@ class CatalogTestCase(CodeIntelTestCase):
                     pass
         """)
         buf = self.mgr.buf_from_content(blam, lang=self.lang, path="blam.py")
-        open(join(self.test_catalog_dirs[0], "blam.cix"), 'w').write(buf.cix)
+        open(join(self.test_catalog_dirs[0], "blam.cix"), 'wb').write(buf.cix)
 
         # Ensure the catalog is updated.
         self.mgr.db.get_catalogs_zone().update()

@@ -111,7 +111,6 @@ def getcollector():
         a("attrfinderRE" , "(?:[\n \t]*)(%(Name)s)(?:%(S)s)?=(?:%(S)s)?(%(AttValSE)s)", re.S|re.U)
     return g_collector
 
-is_not_ascii = re.compile(eval(r'u"[\u0080-\uffff]"')).search
 
 def parseiter(data, markuponly=0):
     if markuponly:
@@ -271,9 +270,9 @@ class HTMLTreeBuilder(ElementTree.TreeBuilder):
         return self._last
 
     def data(self, data):
-        if isinstance(data, type('')) and is_not_ascii(data):
+        if not isinstance(data, six.text_type):
             # convert to unicode, but only if necessary
-            data = six.text_type(data, self.encoding, "ignore")
+            data = data.decode('utf-8', 'ignore')
         ElementTree.TreeBuilder.data(self, data)
 
     def close(self):

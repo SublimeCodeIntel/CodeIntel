@@ -48,7 +48,7 @@ class MakefileLangInfo(LangInfo):
     name = "Makefile"
     conforms_to_bases = ["Text"]
     exts = [".mak"]
-    filename_patterns = [re.compile(br'^[Mm]akefile.*$')]
+    filename_patterns = [re.compile(r'^[Mm]akefile.*$')]
 
 class CMakeLangInfo(LangInfo):
     name = "CMake"

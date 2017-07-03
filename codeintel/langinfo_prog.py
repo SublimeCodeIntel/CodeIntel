@@ -294,6 +294,7 @@ class JavaScriptLangInfo(_JSLikeLangInfo):
 class NodeJSLangInfo(_JSLikeLangInfo):
     name = "Node.js"
     exts = ['.js']
+    is_minor_variant = JavaScriptLangInfo
 
 class CoffeeScriptLangInfo(_JSLikeLangInfo):
     name = "CoffeeScript"

@@ -973,7 +973,7 @@ class CSSLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin):
     def _get_all_anchors_names_in_project(self):
         #anchors = []
         #pos = 0
-        #LENGTH = accessor.length
+        #LENGTH = accessor.length()
         #style = 0
         #func_style_at_pos = accessor.style_at_pos
         #func_char_at_pos = accessor.char_at_pos

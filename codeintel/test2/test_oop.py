@@ -44,7 +44,8 @@ class OOPTestCase(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         unittest.TestCase.__init__(self, *args, **kwargs)
         self.conn = None
-        self.stdio = None
+        self.stdi = None
+        self.stdo = None
         self.proc = None
 
     def _fixup_for_dbgp(self, argv, env):
@@ -114,17 +115,25 @@ class OOPTestCase(unittest.TestCase):
         self.proc = subprocess.Popen(argv, env=env)
 
         self.socket = self.conn.accept()[0]
-        self.stdio = self.socket.makefile("r+b", 0)
+        self.stdo = self.socket.makefile('wb', 0)
+        self.stdi = self.socket.makefile('rb', 0)
 
         self.proc.poll()
         self.assertIsNone(self.proc.returncode,
                           "Child process died prematurely")
-        buf = self.stdio.read(3)
-        self.assertEqual(buf, "2{}")
+        buf = b''
+        while len(buf) < 3:
+            r = self.stdi.read(3 - len(buf))
+            if not r:
+                break
+            buf += r
+        self.assertEqual(buf, b'2{}')
 
     def tearDown(self):
-        if self.stdio:
-            self.stdio.close()
+        if self.stdi:
+            self.stdi.close()
+        if self.stdo:
+            self.stdo.close()
         if self.socket:
             self.socket.shutdown(socket.SHUT_RDWR)
             self.socket.close()
@@ -150,7 +159,7 @@ class OOPTestCase(unittest.TestCase):
     def send(self, **kwargs):
         data = json.dumps(kwargs, separators=(",", ":"))
         log.debug("writing: [%s]", data)
-        self.stdio.write(str(len(data)) + data)
+        self.stdo.write(b"%d%s" % (len(data), data.encode('utf-8')))
 
     def _test_with_commands(self, commands, ignore_unsolicited=True):
         """
@@ -174,21 +183,21 @@ class OOPTestCase(unittest.TestCase):
                 expected = None
             command = dict(command, req_id=str(i))
             self.send(**command)
-            buf = ""
+            buf = b''
             while True:
-                ch = self.stdio.read(1)
-                if ch == "{":
+                ch = self.stdi.read(1)
+                if ch == b'{':
                     length = int(buf, 10)
-                    buf = ch + self.stdio.read(length - 1)
+                    buf = ch + self.stdi.read(length - 1)
                     result = json.loads(buf)
                     log.debug("receive: %r", result)
                     if ignore_unsolicited:
                         if "req_id" not in result:
-                            buf = ""
+                            buf = b''
                             continue
                     break
                 else:
-                    self.assertIn(ch, "0123456789",
+                    self.assertIn(ch, b'0123456789',
                                   "Invalid data: %s" % (buf + ch,))
                     buf += ch
             if expected is not None:

@@ -135,7 +135,7 @@ class PHPLangIntel(CitadelLangIntel, ParenStyleCalltipIntelMixin,
         paren_count = 0
         p = pos
         min_p = max(0, p - 200) # look back max 200 chars
-        while p > min_p:
+        while p and p > min_p:
             p, c, style = ac.getPrecedingPosCharStyle(ignore_styles=self.comment_styles)
             if style == self.operator_style:
                 if c == ")":

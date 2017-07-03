@@ -175,12 +175,10 @@ class SilverCityAccessor(Accessor):
     def _char_pos_from_byte_pos(self, byte_pos):
         line = self.line_from_pos(byte_pos)
         byte_offset, char_offset = self.__position_data[line][:2]
-        next_byte_offset = (byte_offset + len(self.content[char_offset].encode("utf-8")))
         try:
-            while next_byte_offset <= byte_pos:
-                byte_offset = next_byte_offset
+            while byte_offset < byte_pos:
+                byte_offset += len(self.content[char_offset].encode("utf-8"))
                 char_offset += 1
-                next_byte_offset += len(self.content[char_offset].encode("utf-8"))
         except IndexError:
             pass  # running past EOF
         return char_offset

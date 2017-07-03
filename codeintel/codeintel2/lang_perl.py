@@ -1054,7 +1054,7 @@ class PerlLangIntel(CitadelLangIntel,
                 citdl_expr = citdl_expr[1:]
             if trg.id[1] == TRG_FORM_DEFN and citdl_expr[0] == '$':
                 current_pos = trg.pos
-                lim = buf.accessor.length
+                lim = buf.accessor.length()
                 style = buf.accessor.style_at_pos(current_pos)
                 while (style == ScintillaConstants.SCE_PL_SCALAR or 
                        ScintillaConstants.SCE_PL_REGEX_VAR <= style <= ScintillaConstants.SCE_PL_STRING_QR_VAR) and current_pos < lim:

@@ -50,6 +50,7 @@ import random
 from hashlib import md5
 import re
 import six
+from six.moves import reload_module as reload
 
 from codeintel2.manager import Manager
 from codeintel2.util import indent, dedent, banner, markup_text, unmark_text

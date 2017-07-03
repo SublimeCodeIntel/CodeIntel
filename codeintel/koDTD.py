@@ -105,7 +105,7 @@ class dtd_dataset:
         self.elements_caseless = {}
 
     def element_info(self, element_name):
-        name = element_name.lower()
+        name = element_name and element_name.lower()
         if name in self.elements_caseless:
             return self.elements_caseless[name]
         return None

@@ -162,7 +162,7 @@ class _CSSLexer(Lexer):
     def __init__(self, code, language):
         Lexer.__init__(self)
         # We don't care about any JS operators in `...` escapes
-        terms = '@{ ${ ~= |= ::'
+        terms = r'@{ ${ ~= |= ::'
         if language == "Less":
             terms += ' || &&'
         self.multi_char_ops = self.build_dict(terms)
@@ -259,7 +259,9 @@ class _CSSParser(object):
                                    status)
 
     def _add_result_tok_parts(self, message, line_start, col_start, line_end, col_end, text, status=1):
-        if not self._results or self._results[-1].line_end < line_start:
+        if (not self._results or
+            self._results[-1].line_end is not None and line_start is not None and
+            self._results[-1].line_end < line_start):
             if not "got" in message:
                 if line_start is None:
                     message += ", reached end of file"

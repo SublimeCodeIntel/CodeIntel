@@ -94,7 +94,7 @@ class ProjectZone(object):
 
         self.name = basename(proj.path)
         self.base_dir = join(self.db.base_dir, "db", "projs", 
-                             md5(proj.path).hexdigest())
+                             md5(proj.path.encode('utf-8')).hexdigest())
         self._proj_lib_from_lang = weakref.WeakValueDictionary()
         self._idx_lock = threading.RLock()
         self._dirs_from_basename = None
