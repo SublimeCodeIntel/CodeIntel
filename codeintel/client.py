@@ -75,31 +75,27 @@ class CodeIntel(object):
             for obj in self._observers.keys():
                 obj.observer(topic, data)
 
-    def _on_mgr_progress(self, mgr, message, progress=None, state=None):
-        self.log.debug("Progress: [%s] %s%% @%s=%s", message, progress, state, mgr.state if mgr else "<None>")
-        summary = None
-        if progress == "(ABORTED)":
-            # abort
-            self.log.debug("Got abort message")
-            summary = "Code Intelligence Initialization Aborted"
-        elif state in (None, CodeIntelManager.STATE_DESTROYED):
+    def _on_mgr_progress(self, mgr, message, state=None, response=None):
+        topic = 'status_message'
+        self.log.debug("Progress: [%s] %s%% @%s=%s", message, state, mgr.state if mgr else "<None>")
+        if state is CodeIntelManager.STATE_DESTROYED:
             self.log.debug("startup failed: %s", message)
-            summary = "Startup failed: %s", message
+            topic = 'error_message'
+            message = "Startup failed: %s" % message
         elif state is CodeIntelManager.STATE_BROKEN:
             self.log.debug("db is broken, needs manual intervention")
-            summary = "There is an error with your code intelligence database; it must be reset before it can be used."
+            topic = 'error_message'
+            message = "There is an error with your code intelligence database; it must be reset before it can be used."
+        elif state is CodeIntelManager.STATE_ABORTED:
+            self.log.debug("Got abort message")
+            topic = 'error_message'
+            message = "Code Intelligence Initialization Aborted"
         elif state is CodeIntelManager.STATE_READY:
             self.log.debug("db is ready")
-        elif message is None and progress is None:
-            self.log.debug("nothing to report")
+        if message:
+            self.notify_observers(topic, dict(response or {}, message=message))
         else:
-            self.log.debug("progress update, not finished yet")
-            if isinstance(progress, (int, float)):
-                self.notify_observers('progress', dict(message=message, progress=progress))
-        if summary:
-            self.notify_observers('error_message', dict(message=summary))
-        elif message:
-            self.notify_observers('status_message', dict(message=message))
+            self.log.debug("nothing to report")
 
     def _on_mgr_shutdown(self, mgr):
         # The codeintel manager is going away, drop the reference to it
@@ -126,7 +122,7 @@ class CodeIntel(object):
             if not self.mgr:
                 self.mgr = CodeIntelManager(
                     self,
-                    init_callback=self._on_mgr_progress,
+                    progress_callback=self._on_mgr_progress,
                     shutdown_callback=self._on_mgr_shutdown,
                     oop_command=oop_command,
                     oop_mode=oop_mode,
@@ -344,6 +340,7 @@ class CodeIntelManager(threading.Thread):
     STATE_READY = ("ready",)  # ready for use
     STATE_QUITTING = ("quitting",)  # shutting down
     STATE_DESTROYED = ("destroyed",)  # connection shut down, child process dead
+    STATE_ABORTED = ("aborted",)
 
     _oop_command = '/usr/local/bin/codeintel'
     _oop_mode = 'pipe'
@@ -386,13 +383,13 @@ class CodeIntelManager(threading.Thread):
         },
     ]
 
-    def __init__(self, service, init_callback=None, shutdown_callback=None, oop_command=None, oop_mode=None, log_levels=None, env=None, prefs=None):
+    def __init__(self, service, progress_callback=None, shutdown_callback=None, oop_command=None, oop_mode=None, log_levels=None, env=None, prefs=None):
         self.log = logging.getLogger(logger_name + '.' + self.__class__.__name__)
         self.service = service
         self.languages = service.languages
         self._abort = set()
         self._next_id = 0
-        self._init_callback = init_callback
+        self._progress_callback = progress_callback
         self._shutdown_callback = shutdown_callback
         if oop_command is not None:
             self._oop_command = oop_command
@@ -521,7 +518,7 @@ class CodeIntelManager(threading.Thread):
             self.kill()
             message = "Error initing child: %s" % e
             self.log.error(message, exc_info=True)
-            self._init_callback(self, message)
+            self._progress_callback(self, message)
         else:
             self._send_init_requests()
 
@@ -544,38 +541,42 @@ class CodeIntelManager(threading.Thread):
 
         outstanding_cpln_langs = set()
 
-        def update(message, response=None, state=CodeIntelManager.STATE_DESTROYED, progress=None):
+        def update(message=None, state=None, response=None):
             if state in (CodeIntelManager.STATE_DESTROYED, CodeIntelManager.STATE_BROKEN):
                 self.kill()
             if state is not None:
                 self.state = state
             if response is not None:
-                message += "\n" + response.get("message", "(No further information available)")
-            if any(x is not None for x in (message, progress, state)):
+                if message:
+                    message += "\n"
+                else:
+                    message = ""
+                message += response.get('message', "(No further information available)")
+            if any(x is not None for x in (message, state)):
                 # don't do anything if everything we have is just none
-                self._init_callback(self, message, progress, state)
+                self._progress_callback(self, message, state, response)
 
         def get_citadel_langs(request, response):
             if not response.get('success', False):
-                update("Failed to get citadel languages:", response)
+                update("Failed to get citadel languages:", state=CodeIntelManager.STATE_DESTROYED, response=response)
                 return
             self.citadel_langs = sorted(response.get('languages'))
 
         def get_xml_langs(request, response):
             if not response.get('success', False):
-                update("Failed to get XML languages:", response)
+                update("Failed to get XML languages:", state=CodeIntelManager.STATE_DESTROYED, response=response)
                 return
             self.xml_langs = sorted(response.get('languages'))
 
         def get_stdlib_langs(request, response):
             if not response.get('success', False):
-                update("Failed to get languages which support standard libraries:", response)
+                update("Failed to get languages which support standard libraries:", state=CodeIntelManager.STATE_DESTROYED, response=response)
                 return
             self.stdlib_langs = sorted(response.get('languages'))
 
         def get_cpln_langs(request, response):
             if not response.get('success', False):
-                update("Failed to get completion languages:", response)
+                update("Failed to get completion languages:", state=CodeIntelManager.STATE_DESTROYED, response=response)
                 return
             self.cpln_langs = sorted(response.get('languages'))
             self.languages.clear()
@@ -586,7 +587,7 @@ class CodeIntelManager(threading.Thread):
         def get_lang_info(request, response):
             lang = request['language']
             if not response.get('success', False):
-                update("Failed to get information for %s:" % (lang,), response)
+                update("Failed to get information for %s:" % (lang,), state=CodeIntelManager.STATE_DESTROYED, response=response)
                 return
             self.languages[lang] = dict(
                 cpln_fillup_chars=response['completion-fillup-chars'],
@@ -604,10 +605,10 @@ class CodeIntelManager(threading.Thread):
 
             if req_id in self._abort:
                 self.log.debug("Aborting startup")
-                update("Codeintel startup aborted", progress="(ABORTED)")
+                update("Codeintel startup aborted", state=CodeIntelManager.STATE_ABORTED)
                 return
 
-            update(response.get('message'), state=self.state, progress=response.get('progress'))
+            update(response=response)
 
             if 'success' not in response:
                 # status update
@@ -643,7 +644,7 @@ class CodeIntelManager(threading.Thread):
                     print("Language %s needs version resolving!" % lang)
                     # Get the version for the language here ([0-9]+.[0-9]+)
                     langs[lang] = ver
-                self._send(callback=fixup_db, command="database-preload", languages=langs)
+                self._send(callback=fixup_db, command='database-preload', languages=langs)
                 return
 
             if state == 'upgrade-needed':
@@ -683,8 +684,10 @@ class CodeIntelManager(threading.Thread):
 
         def update_callback(response):
             if not response.get("success", False):
-                update("Failed to get available catalogs:", response)
+                update("Failed to get available catalogs:", state=CodeIntelManager.STATE_DESTROYED, response=response)
         self.update_catalogs(update_callback=update_callback)
+
+        self.send(command="set-xml-catalogs")
 
     def set_global_environment(self, env, prefs):
         self.env = env

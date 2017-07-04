@@ -981,7 +981,7 @@ def init_xml_catalogs():
     _xml_catalogs_initialized = True
     import koXMLDatasetInfo
     kodevel_basedir = dirname(dirname(abspath(__file__)))
-    catalog = join(kodevel_basedir, "catalogs", "testcat.xml")
+    catalog = join(kodevel_basedir, "catalogs", "catalog.xml")
     catsvc = koXMLDatasetInfo.getService()
     catsvc.resolver.resetCatalogs([catalog])
 

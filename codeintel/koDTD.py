@@ -144,7 +144,7 @@ class dtd_dataset:
         return self.root
 
     def possible_attributes(self, element_name):
-        name = element_name.lower()
+        name = element_name and element_name.lower()
         if name in self.elements_caseless:
             return list(self.elements_caseless[name].attributes.keys())
         return []

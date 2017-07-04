@@ -11,7 +11,6 @@
      at this time for editing features.
 
 -->
-    <group xml:base="contrib">
 
     <!-- Namespace to URI mappings to RelaxNG Schemas -->
     <uri name="http://purl.org/atom/ns#"
@@ -24,8 +23,6 @@
          uri="rng/relaxCore.rng"/>
     <uri name="http://relaxng.org/ns/structure/1.0"
          uri="rng/relaxng.rng"/>
-    <uri name="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-         uri="rng/rdfxml.rng"/>
     <uri name="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
          uri="rng/rdfxml.rng"/>
     <uri name="http://www.w3.org/2001/XMLSchema"
@@ -44,16 +41,16 @@
     <!-- These SGML catalogs depend on DOCTYPE declarations -->
     <nextCatalog catalog="sgml-lib/sgml.soc"/>
     <nextCatalog catalog="sgml-lib/xml.soc"/>
-    <nextCatalog catalog="html5/catalog.xml"/>
-    </group>
-    <group xml:base="editor">
+    
     <!-- additional catalogs distributed with Komodo -->
     <nextCatalog catalog="mozilla/catalog.xml"/>
-    </group>
-
-    <!-- XXX these catalogs wont work at all for tests
     <nextCatalog catalog="wapforum/catalog.xml"/>
     <nextCatalog catalog="oasis/catalog.xml"/>
     <nextCatalog catalog="docbook44/catalog.xml"/>
-    -->
+
+    <nextCatalog catalog="html5/catalog.xml"/>
+    <nextCatalog catalog="angularjs/catalog.xml"/>
+
+    <nextCatalog catalog="mxml/catalog.xml"/>
+
 </catalog>
