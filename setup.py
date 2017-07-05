@@ -11,17 +11,17 @@ VERSION = codeintel.__version__
 ########################################################################
 # SilverCity (it's in PyPI, but unpatched, this one is patched)
 
-silvercity_src_files = []
-silvercity_extra_link_args = []
-silvercity_extra_objects = []
-silvercity_define_macros = []
-silvercity_libraries = []
+SilverCity_src_files = []
+SilverCity_extra_link_args = []
+SilverCity_extra_objects = []
+SilverCity_define_macros = []
+SilverCity_libraries = []
 
-silvercity_src = 'silvercity/PySilverCity/Src'
+SilverCity_src = 'silvercity/PySilverCity/Src'
 
 # Add Python extension source files
-silvercity_src_files.extend([
-    os.path.join(silvercity_src, file) for file in [
+SilverCity_src_files.extend([
+    os.path.join(SilverCity_src, file) for file in [
         'PyLexerModule.cxx',
         'PyPropSet.cxx',
         'PySilverCity.cxx',
@@ -29,11 +29,11 @@ silvercity_src_files.extend([
     ]
 ])
 
-silvercity_libsrc = 'silvercity/Lib/Src'
+SilverCity_libsrc = 'silvercity/Lib/Src'
 
 # Add library source files
-silvercity_src_files.extend([
-    os.path.join(silvercity_libsrc, file) for file in [
+SilverCity_src_files.extend([
+    os.path.join(SilverCity_libsrc, file) for file in [
         'BufferAccessor.cxx',
         'LexState.cxx',
         'LineVector.cxx',
@@ -48,7 +48,7 @@ scintilla_src = 'scintilla/src'
 scintilla_lexlib = 'scintilla/lexlib'
 scintilla_lexers = 'scintilla/lexers'
 
-silvercity_src_files.extend([
+SilverCity_src_files.extend([
     os.path.join(scintilla_src, file) for file in [
         'KeyMap.cxx',
         'Catalogue.cxx',
@@ -56,7 +56,7 @@ silvercity_src_files.extend([
     ]
 ])
 
-silvercity_src_files.extend([
+SilverCity_src_files.extend([
     os.path.join(scintilla_lexlib, file) for file in [
         'WordList.cxx',
         'PropSetSimple.cxx',
@@ -76,7 +76,7 @@ for file in os.listdir(scintilla_lexers):
     file_ = os.path.join(scintilla_lexers, file)
     if os.path.basename(file_).startswith('Lex') and \
        os.path.splitext(file_)[1] == '.cxx':
-        silvercity_src_files.append(file_)
+        SilverCity_src_files.append(file_)
 
 # Add pcre source files
 pcre_src = 'pcre'
@@ -96,7 +96,7 @@ config_h_name = os.path.join(pcre_src, 'config.h')
 if not os.path.exists(config_h_name):
     with open(config_h_name, 'w') as config_h:
         config_h.write('/* Fake config.h */')
-silvercity_define_macros.extend([
+SilverCity_define_macros.extend([
     ('PCRE_STATIC', None),
     ('HAVE_STRERROR', None),
     ('HAVE_MEMMOVE', None),
@@ -107,7 +107,7 @@ silvercity_define_macros.extend([
     ('POSIX_MALLOC_THRESHOLD', 10),
     ('EXPORT', ""),
 ])
-silvercity_src_files.extend([
+SilverCity_src_files.extend([
     os.path.join(pcre_src, file) for file in [
         'pcre_compile.c',
         'pcre_config.c',
@@ -133,26 +133,26 @@ silvercity_src_files.extend([
 ])
 
 
-silvercity_include_dirs = [
+SilverCity_include_dirs = [
     scintilla_src,
     scintilla_lexlib,
     scintilla_lexers,
     scintilla_include,
-    silvercity_src,
-    silvercity_libsrc,
+    SilverCity_src,
+    SilverCity_libsrc,
     pcre_src,
 ]
 
 
-silvercity_ext = Extension(
+SilverCity_ext = Extension(
     'codeintel.SilverCity._SilverCity',
-    silvercity_src_files,
-    include_dirs=silvercity_include_dirs,
+    SilverCity_src_files,
+    include_dirs=SilverCity_include_dirs,
     extra_compile_args=[],
-    define_macros=silvercity_define_macros,
-    extra_link_args=silvercity_extra_link_args,
-    extra_objects=silvercity_extra_objects,
-    libraries=silvercity_libraries,
+    define_macros=SilverCity_define_macros,
+    extra_link_args=SilverCity_extra_link_args,
+    extra_objects=SilverCity_extra_objects,
+    libraries=SilverCity_libraries,
 )
 
 ########################################################################
@@ -172,37 +172,34 @@ sgmlop_ext = Extension(
 # cElementTree (it's in PyPI, but unpatched, this one is patched)
 # ciElementTree (it's not in PyPI)
 
-celementtree_include_dirs = [
+xElementTree_src_files = [
+    'xElementTree/src/expat/xmlparse.c',
+    'xElementTree/src/expat/xmlrole.c',
+    'xElementTree/src/expat/xmltok.c',
+]
+
+xElementTree_include_dirs = [
     'xElementTree/src',
     'xElementTree/src/expat',
 ]
-celementtree_ext = Extension(
-    'codeintel.cElementTree._cElementTree', [
-        'xElementTree/src/_cElementTree.c',
-        'xElementTree/src/expat/xmlparse.c',
-        'xElementTree/src/expat/xmlrole.c',
-        'xElementTree/src/expat/xmltok.c',
-    ],
-    define_macros=[
-        ('XML_STATIC', None),
-        ('HAVE_MEMMOVE', None),
-    ],
-    include_dirs=celementtree_include_dirs,
+
+xElementTree_define_macros = [
+    ('XML_STATIC', None),
+    ('HAVE_MEMMOVE', None),
+]
+
+cElementTree_ext = Extension(
+    'codeintel._cElementTree', ['xElementTree/src/py%s_cElementTree.c' % sys.version_info[0]] + xElementTree_src_files,
+    include_dirs=xElementTree_include_dirs,
+    define_macros=xElementTree_define_macros,
 )
 
-cielementtree_ext = Extension(
-    'codeintel.ciElementTree._ciElementTree', [
-        'xElementTree/src/_ciElementTree.c',
-        'xElementTree/src/expat/xmlparse.c',
-        'xElementTree/src/expat/xmlrole.c',
-        'xElementTree/src/expat/xmltok.c',
-    ],
-    define_macros=[
-        ('XML_STATIC', None),
-        ('HAVE_MEMMOVE', None),
-    ],
-    include_dirs=celementtree_include_dirs,
+ciElementTree_ext = Extension(
+    'codeintel._ciElementTree', ['xElementTree/src/py%s_ciElementTree.c' % sys.version_info[0]] + xElementTree_src_files,
+    include_dirs=xElementTree_include_dirs,
+    define_macros=xElementTree_define_macros,
 )
+
 
 ########################################################################
 # codeintel
@@ -278,9 +275,9 @@ TemplateToolkit, PHP, C/C++, Objective-C.""",
     keywords='codeintel intellisense autocomplete ide languages python go javascript mason xbl xul rhtml scss python html ruby python3 xml sass xslt django html5 perl css twig less smarty node tcl templatetoolkit php',
     install_requires=install_requires,
     ext_modules=[
-        silvercity_ext,
-        celementtree_ext,
-        cielementtree_ext,
+        SilverCity_ext,
+        cElementTree_ext,
+        ciElementTree_ext,
         sgmlop_ext,
     ],
     entry_points={
@@ -297,8 +294,6 @@ TemplateToolkit, PHP, C/C++, Objective-C.""",
         'codeintel.codeintel2.database',
         'codeintel.elementtree',
         'codeintel.SilverCity',
-        'codeintel.cElementTree',
-        'codeintel.ciElementTree',
         'codeintel.test2',
     ],
     package_data={

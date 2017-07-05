@@ -9,7 +9,7 @@
 
 /* Namespace external symbols to allow multiple libexpat version to
    co-exist. */
-#include "cietexpatns.h"
+#include "cetexpatns.h"
 
 #if defined(_MSC_EXTENSIONS) && !defined(__BEOS__) && !defined(__CYGWIN__)
 #define XML_USE_MSC_EXTENSIONS 1

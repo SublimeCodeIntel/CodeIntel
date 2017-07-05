@@ -63,7 +63,7 @@ ext_modules = []
 
 ext_modules.append(
     Extension(
-        "cElementTree._cElementTree", ["src/_cElementTree.c"] + sources,
+        "_cElementTree", ["src/py%s_cElementTree.c" % sys.version_info[0]] + sources,
         define_macros=defines,
         include_dirs=includes,
     )
@@ -71,7 +71,7 @@ ext_modules.append(
 
 ext_modules.append(
     Extension(
-        "ciElementTree._ciElementTree", ["src/_ciElementTree.c"] + sources,
+        "_ciElementTree", ["src/py%s_ciElementTree.c" % sys.version_info[0]] + sources,
         define_macros=defines,
         include_dirs=includes,
     )
@@ -96,7 +96,7 @@ setup(
     description=DESCRIPTION,
     download_url=DOWNLOAD,
     ext_modules=ext_modules,
-    packages=[
+    py_modules=[
         "cElementTree",
         "ciElementTree",
     ],

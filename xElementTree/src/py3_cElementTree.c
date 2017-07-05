@@ -171,13 +171,6 @@ typedef struct {
     int length; /* actual number of items */
     int allocated; /* allocated items */
 
-    /* dict: lazy 'name' attr -> child elem mapping, or None if not
-       accessed */
-    PyObject* names;
-
-    /* dict for open use to cache arbitrary info on an elem */
-    PyObject* cache;
-
     /* this either points to _children or to a malloced buffer */
     PyObject* *children;
 
@@ -222,7 +215,7 @@ static PyTypeObject Element_Type;
 /* Element constructors and destructor */
 
 LOCAL(int)
-create_extra(ElementObject* self, PyObject* attrib, PyObject* names, PyObject* cache)
+create_extra(ElementObject* self, PyObject* attrib)
 {
     self->extra = PyObject_Malloc(sizeof(ElementObjectExtra));
     if (!self->extra)
@@ -233,18 +226,6 @@ create_extra(ElementObject* self, PyObject* attrib, PyObject* names, PyObject* c
 
     Py_INCREF(attrib);
     self->extra->attrib = attrib;
-
-    if (!names)
-        names = Py_None;
-
-    Py_INCREF(names);
-    self->extra->names = names;
-
-    if (!cache)
-        cache = Py_None;
-
-    Py_INCREF(cache);
-    self->extra->cache = cache;
 
     self->extra->length = 0;
     self->extra->allocated = STATIC_CHILDREN;
@@ -269,10 +250,6 @@ dealloc_extra(ElementObject* self)
 
     Py_DECREF(myextra->attrib);
 
-    Py_DECREF(myextra->names);
-
-    Py_DECREF(myextra->cache);
-
     for (i = 0; i < myextra->length; i++)
         Py_DECREF(myextra->children[i]);
 
@@ -282,27 +259,22 @@ dealloc_extra(ElementObject* self)
     PyObject_Free(myextra);
 }
 
-/* Convenience internal function to create new Element objects with the given
+/* Convenience internal functions to create new Element objects with the given
  * tag and attributes.
 */
-LOCAL(PyObject*)
-create_new_element(PyObject* tag, PyObject* attrib, PyObject* names, PyObject* cache)
+LOCAL(int)
+feed_new_element(ElementObject* self, PyObject* tag, PyObject* attrib)
 {
-    ElementObject* self;
     Py_UNICODE *string;
+    char *bytes;
     int size, i;
 
-    self = PyObject_GC_New(ElementObject, &Element_Type);
-    if (self == NULL)
-        return NULL;
     self->extra = NULL;
 
-    if ((attrib != Py_None && !is_empty_dict(attrib)) ||
-        (names != Py_None && !is_empty_dict(names)) ||
-        (cache != Py_None && !is_empty_dict(cache))) {
-        if (create_extra(self, attrib, names, cache) < 0) {
+    if ((attrib != NULL && attrib != Py_None && !is_empty_dict(attrib))) {
+        if (create_extra(self, attrib) < 0) {
             PyObject_Del(self);
-            return NULL;
+            return -1;
         }
     }
 
@@ -318,25 +290,54 @@ create_new_element(PyObject* tag, PyObject* attrib, PyObject* names, PyObject* c
     self->localName = NULL;
     self->ns = NULL;
 
-    string = PyUnicode_AS_UNICODE(tag);
-    size = PyUnicode_GET_SIZE(tag);
+#if defined(Py_USING_UNICODE)
+    if (PyUnicode_Check(tag)) {
+        string = PyUnicode_AS_UNICODE(tag);
+        size = PyUnicode_GET_SIZE(tag);
 
-    for (i = 0; i < size; i++)
-        if (string[i] == '}')
-            break;
-    if (i != size) {
-        /* convert from universal name */
-        self->ns = PyUnicode_FromUnicode(string+1, i-1);
-        Py_INCREF(self->ns);
+        /* look for namespace separator */
+        for (i = 0; i < size; i++) {
+            if (string[i] == '}')
+                break;
+        }
+        if (i != size) {
+            /* convert from universal name */
+            self->ns = PyUnicode_FromUnicode(string+1, i-1);
+            Py_INCREF(self->ns);
 
-        if (size-i > 0) {
-            self->localName = PyUnicode_FromUnicode(string+i+1, size-i-1);
-            Py_INCREF(self->localName);
-        } else {
-            Py_INCREF(Py_None);
-            self->localName = Py_None;
+            if (size-i > 0) {
+                self->localName = PyUnicode_FromUnicode(string+i+1, size-i-1);
+                Py_INCREF(self->localName);
+            } else {
+                Py_INCREF(Py_None);
+                self->localName = Py_None;
+            }
+        }
+    } else
+#endif
+    {
+        bytes = PyBytes_AS_STRING(tag);
+        size = strlen(bytes);
+
+        /* look for namespace separator */
+        for (i = 0; i < size; i++)
+            if (bytes[i] == '}')
+                break;
+        if (i != size) {
+            /* convert from universal name */
+            self->ns = PyUnicode_FromStringAndSize(bytes+1, i-1);
+            Py_INCREF(self->ns);
+
+            if (size-i > 0) {
+                self->localName = PyUnicode_FromStringAndSize(bytes+i+1, size-i-1);
+                Py_INCREF(self->localName);
+            } else {
+                Py_INCREF(Py_None);
+                self->localName = Py_None;
+            }
         }
     }
+
     /* plain name; use key as tag */
     if (self->localName == NULL) {
         Py_INCREF(tag);
@@ -354,6 +355,21 @@ create_new_element(PyObject* tag, PyObject* attrib, PyObject* names, PyObject* c
     self->end = Py_None;
 
     self->weakreflist = NULL;
+
+    return 0;
+}
+
+LOCAL(PyObject*)
+create_new_element(PyObject* tag, PyObject* attrib)
+{
+    ElementObject* self;
+
+    self = PyObject_GC_New(ElementObject, &Element_Type);
+    if (self == NULL)
+        return NULL;
+
+    if (feed_new_element(self, tag, attrib) < 0)
+        return NULL;
 
     ALLOC(sizeof(ElementObject), "create element");
     PyObject_GC_Track(self);
@@ -433,7 +449,6 @@ static int
 element_init(PyObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *tag;
-    PyObject *tmp;
     PyObject *attrib = NULL;
     ElementObject *self_elem;
 
@@ -460,51 +475,13 @@ element_init(PyObject *self, PyObject *args, PyObject *kwds)
 
     self_elem = (ElementObject *)self;
 
-    if (attrib != NULL && !is_empty_dict(attrib)) {
-        if (create_extra(self_elem, attrib, NULL, NULL) < 0) {
-            Py_DECREF(attrib);
-            return -1;
-        }
+    if (feed_new_element(self_elem, tag, attrib) < 0) {
+        Py_DECREF(attrib);
+        return -1;
     }
 
     /* We own a reference to attrib here and it's no longer needed. */
     Py_XDECREF(attrib);
-
-    /* Replace the objects already pointed to by tag, text and tail. */
-    tmp = self_elem->tag;
-    Py_INCREF(tag);
-    self_elem->tag = tag;
-    Py_DECREF(tmp);
-
-    tmp = self_elem->text;
-    Py_INCREF(Py_None);
-    self_elem->text = Py_None;
-    Py_DECREF(JOIN_OBJ(tmp));
-
-    tmp = self_elem->tail;
-    Py_INCREF(Py_None);
-    self_elem->tail = Py_None;
-    Py_DECREF(JOIN_OBJ(tmp));
-
-    tmp = self_elem->localName;
-    Py_INCREF(Py_None);
-    self_elem->localName = Py_None;
-    Py_DECREF(tmp);
-
-    tmp = self_elem->ns;
-    Py_INCREF(Py_None);
-    self_elem->ns = Py_None;
-    Py_DECREF(tmp);
-
-    tmp = self_elem->start;
-    Py_INCREF(Py_None);
-    self_elem->start = Py_None;
-    Py_DECREF(tmp);
-
-    tmp = self_elem->end;
-    Py_INCREF(Py_None);
-    self_elem->end = Py_None;
-    Py_DECREF(tmp);
 
     return 0;
 }
@@ -535,7 +512,7 @@ element_resize(ElementObject* self, int extra)
        elements.  set an exception and return -1 if allocation failed */
 
     if (!self->extra)
-        create_extra(self, NULL, NULL, NULL);
+        create_extra(self, NULL);
 
     size = self->extra->length + extra;
 
@@ -589,12 +566,6 @@ element_add_subelement(ElementObject* self, PyObject* element)
 
     self->extra->length++;
 
-    if (self->extra->names != Py_None) { /* FIXME: could just update dict */
-        Py_DECREF(self->extra->names);
-        self->extra->names = Py_None;
-        Py_INCREF(Py_None);
-    }
-
     return 0;
 }
 
@@ -618,66 +589,6 @@ element_get_attrib(ElementObject* self)
     return res;
 }
 
-LOCAL(PyObject*)
-element_get_cache(ElementObject* self)
-{
-    /* return borrowed reference to cache dictionary */
-    /* note: this function assumes that the extra section exists */
-
-    PyObject* res = self->extra->cache;
-
-    if (res == Py_None) {
-        /* create missing dictionary */
-        res = PyDict_New();
-        if (!res)
-            return NULL;
-        Py_DECREF(Py_None);
-        self->extra->cache = res;
-    }
-
-    return res;
-}
-
-LOCAL(PyObject*)
-element_get_names(ElementObject* self)
-{
-    /* return borrowed reference to names dictionary */
-    /* note: this function assumes that the extra section exists */
-
-    int i;
-    PyObject* res = self->extra->names;
-
-    if (res == Py_None) {
-        /* create missing dictionary */
-        res = PyDict_New();
-        if (!res)
-            return NULL;
-
-        for (i = 0; i < self->extra->length; i++) {
-            ElementObject* child = (ElementObject*) self->extra->children[i];
-            if (child->extra) {
-                PyObject* name;
-                PyObject* attrib = element_get_attrib(child);
-                if (!attrib)
-                    return NULL;
-
-                name = PyDict_GetItemString(attrib, "name");
-                if (name) {
-                    /* TODO: Get review of ref counting here. */
-                    if (PyDict_SetItem(res, name, (PyObject*)child) < 0) {
-                        Py_DECREF(res);
-                        return NULL;
-                    }
-                }
-            }
-        }
-
-        Py_DECREF(Py_None);
-        self->extra->names = res;
-    }
-
-    return res;
-}
 
 LOCAL(PyObject*)
 element_get_text(ElementObject* self)
@@ -753,7 +664,7 @@ subelement(PyObject *self, PyObject *args, PyObject *kwds)
         attrib = Py_None;
     }
 
-    elem = create_new_element(tag, attrib, Py_None, Py_None);
+    elem = create_new_element(tag, attrib);
 
     Py_DECREF(attrib);
 
@@ -779,10 +690,6 @@ element_gc_traverse(ElementObject *self, visitproc visit, void *arg)
     if (self->extra) {
         int i;
         Py_VISIT(self->extra->attrib);
-
-        Py_VISIT(self->extra->names);
-
-        Py_VISIT(self->extra->cache);
 
         for (i = 0; i < self->extra->length; ++i)
             Py_VISIT(self->extra->children[i]);
@@ -900,10 +807,7 @@ element_copy(ElementObject* self, PyObject* args)
         return NULL;
 
     element = (ElementObject*) create_new_element(
-        self->tag, (self->extra) ? self->extra->attrib : Py_None,
-        Py_None,
-        Py_None
-        );
+        self->tag, (self->extra) ? self->extra->attrib : Py_None);
     if (!element)
         return NULL;
 
@@ -957,14 +861,8 @@ element_deepcopy(ElementObject* self, PyObject* args)
     ElementObject* element;
     PyObject* tag;
     PyObject* attrib;
-    PyObject* names;
-    PyObject* cache;
     PyObject* text;
     PyObject* tail;
-    PyObject* localName;
-    PyObject* ns;
-    PyObject* start;
-    PyObject* end;
     PyObject* id;
 
     PyObject* memo;
@@ -981,35 +879,15 @@ element_deepcopy(ElementObject* self, PyObject* args)
             Py_DECREF(tag);
             return NULL;
         }
-
-        names = deepcopy(self->extra->names, memo);
-        if (!names) {
-            Py_DECREF(tag);
-            return NULL;
-        }
-
-        cache = deepcopy(self->extra->cache, memo);
-        if (!cache) {
-            Py_DECREF(tag);
-            return NULL;
-        }
     } else {
         Py_INCREF(Py_None);
         attrib = Py_None;
-
-        Py_INCREF(Py_None);
-        names = Py_None;
-
-        Py_INCREF(Py_None);
-        cache = Py_None;
     }
 
-    element = (ElementObject*) create_new_element(tag, attrib, names, cache);
+    element = (ElementObject*) create_new_element(tag, attrib);
 
     Py_DECREF(tag);
     Py_DECREF(attrib);
-    Py_DECREF(names);
-    Py_DECREF(cache);
 
     if (!element)
         return NULL;
@@ -1025,30 +903,6 @@ element_deepcopy(ElementObject* self, PyObject* args)
         goto error;
     Py_DECREF(JOIN_OBJ(element->tail));
     element->tail = JOIN_SET(tail, JOIN_GET(self->tail));
-
-    localName = deepcopy(self->localName, memo);
-    if (!localName)
-        goto error;
-    Py_DECREF(element->localName);
-    element->localName = localName;
-
-    ns = deepcopy(self->ns, memo);
-    if (!ns)
-        goto error;
-    Py_DECREF(element->ns);
-    element->ns = ns;
-
-    start = deepcopy(self->start, memo);
-    if (!start)
-        goto error;
-    Py_DECREF(element->start);
-    element->start = start;
-
-    end = deepcopy(self->end, memo);
-    if (!end)
-        goto error;
-    Py_DECREF(element->end);
-    element->end = end;
 
     if (self->extra) {
 
@@ -1104,8 +958,6 @@ element_sizeof(PyObject* _self, PyObject* args)
 #define PICKLED_TAG "tag"
 #define PICKLED_CHILDREN "_children"
 #define PICKLED_ATTRIB "attrib"
-#define PICKLED_NAMES "names"
-#define PICKLED_CACHE "cache"
 #define PICKLED_TAIL "tail"
 #define PICKLED_TEXT "text"
 #define PICKLED_LOCALNAME "localName"
@@ -1142,8 +994,6 @@ element_getstate(ElementObject *self)
                                      PICKLED_TAG, self->tag,
                                      PICKLED_CHILDREN, children,
                                      PICKLED_ATTRIB,
-                                     PICKLED_NAMES, Py_None,
-                                     PICKLED_CACHE, Py_None,
                                      PICKLED_LOCALNAME, self->localName,
                                      PICKLED_NS, self->ns,
                                      PICKLED_START, self->start,
@@ -1155,8 +1005,6 @@ element_getstate(ElementObject *self)
                                      PICKLED_TAG, self->tag,
                                      PICKLED_CHILDREN, children,
                                      PICKLED_ATTRIB, self->extra->attrib,
-                                     PICKLED_NAMES, Py_None,
-                                     PICKLED_CACHE, Py_None,
                                      PICKLED_LOCALNAME, self->localName,
                                      PICKLED_NS, self->ns,
                                      PICKLED_START, self->start,
@@ -1180,8 +1028,6 @@ static PyObject *
 element_setstate_from_attributes(ElementObject *self,
                                  PyObject *tag,
                                  PyObject *attrib,
-                                 PyObject *names,
-                                 PyObject *cache,
                                  PyObject *text,
                                  PyObject *tail,
                                  PyObject *localName,
@@ -1227,7 +1073,7 @@ element_setstate_from_attributes(ElementObject *self,
 
 
     /* Handle ATTRIB and CHILDREN. */
-    if (!children && !attrib && !names && !cache)
+    if (!children && !attrib)
         Py_RETURN_NONE;
 
     /* Compute 'nchildren'. */
@@ -1264,17 +1110,6 @@ element_setstate_from_attributes(ElementObject *self,
         Py_INCREF(attrib);
     }
 
-    if (names) {
-        Py_CLEAR(self->extra->names);
-        self->extra->names = names;
-        Py_INCREF(self->extra->names);
-    }
-
-    if (cache) {
-        Py_CLEAR(self->extra->cache);
-        self->extra->cache = cache;
-        Py_INCREF(self->extra->cache);
-    }
     Py_RETURN_NONE;
 }
 
@@ -1284,12 +1119,11 @@ element_setstate_from_attributes(ElementObject *self,
 static PyObject *
 element_setstate_from_Python(ElementObject *self, PyObject *state)
 {
-    static char *kwlist[] = {PICKLED_TAG, PICKLED_ATTRIB, PICKLED_NAMES,
-                             PICKLED_CACHE, PICKLED_TEXT, PICKLED_TAIL,
+    static char *kwlist[] = {PICKLED_TAG, PICKLED_ATTRIB, PICKLED_TEXT, PICKLED_TAIL,
                              PICKLED_LOCALNAME, PICKLED_NS, PICKLED_START,
                              PICKLED_END, PICKLED_CHILDREN, 0};
     PyObject *args;
-    PyObject *tag, *attrib, *names, *cache, *text, *tail, *localName, *ns, *start, *end, *children;
+    PyObject *tag, *attrib, *text, *tail, *localName, *ns, *start, *end, *children;
     PyObject *retval;
 
     tag = attrib = text = tail = children = NULL;
@@ -1297,12 +1131,11 @@ element_setstate_from_Python(ElementObject *self, PyObject *state)
     if (!args)
         return NULL;
 
-    if (PyArg_ParseTupleAndKeywords(args, state, "|$OOOOOOOOOOO", kwlist, &tag,
-                                    &attrib, &names, &cache, &text, &tail,
+    if (PyArg_ParseTupleAndKeywords(args, state, "|$OOOOOOOOO", kwlist, &tag,
+                                    &attrib, &text, &tail,
                                     &localName, &ns, &start, &end, &children))
-        retval = element_setstate_from_attributes(self, tag, attrib, names,
-                                                  cache, text, tail, localName,
-                                                  ns, start, end, children);
+        retval = element_setstate_from_attributes(self, tag, attrib, text, tail,
+                                                  localName, ns, start, end, children);
     else
         retval = NULL;
 
@@ -1679,7 +1512,7 @@ element_insert(ElementObject* self, PyObject* args)
         return NULL;
 
     if (!self->extra)
-        create_extra(self, NULL, NULL, NULL);
+        create_extra(self, NULL);
 
     if (index < 0) {
         index += self->extra->length;
@@ -1699,12 +1532,6 @@ element_insert(ElementObject* self, PyObject* args)
     self->extra->children[index] = element;
 
     self->extra->length++;
-
-    if (self->extra->names != Py_None) { /* FIXME: could just update dict */
-        Py_DECREF(self->extra->names);
-        self->extra->names = Py_None;
-        Py_INCREF(Py_None);
-    }
 
     Py_RETURN_NONE;
 }
@@ -1756,7 +1583,7 @@ element_makeelement(PyObject* self, PyObject* args, PyObject* kw)
     if (!attrib)
         return NULL;
 
-    elem = create_new_element(tag, attrib, Py_None, Py_None);
+    elem = create_new_element(tag, attrib);
 
     Py_DECREF(attrib);
 
@@ -1804,12 +1631,6 @@ element_remove(ElementObject* self, PyObject* args)
     for (; i < self->extra->length; i++)
         self->extra->children[i] = self->extra->children[i+1];
 
-    if (self->extra->names != Py_None) { /* FIXME: could just update dict */
-        Py_DECREF(self->extra->names);
-        self->extra->names = Py_None;
-        Py_INCREF(Py_None);
-    }
-
     Py_RETURN_NONE;
 }
 
@@ -1833,7 +1654,7 @@ element_set(ElementObject* self, PyObject* args)
         return NULL;
 
     if (!self->extra)
-        create_extra(self, NULL, NULL, NULL);
+        create_extra(self, NULL);
 
     attrib = element_get_attrib(self);
     if (!attrib)
@@ -1868,12 +1689,6 @@ element_setitem(PyObject* self_, Py_ssize_t index, PyObject* item)
         self->extra->length--;
         for (i = index; i < self->extra->length; i++)
             self->extra->children[i] = self->extra->children[i+1];
-    }
-
-    if (self->extra->names != Py_None) { /* FIXME: could just update dict */
-        Py_DECREF(self->extra->names);
-        self->extra->names = Py_None;
-        Py_INCREF(Py_None);
     }
 
     Py_DECREF(old);
@@ -1955,7 +1770,7 @@ element_ass_subscr(PyObject* self_, PyObject* item, PyObject* value)
         PyObject* seq = NULL;
 
         if (!self->extra)
-            create_extra(self, NULL, NULL, NULL);
+            create_extra(self, NULL);
 
         if (PySlice_GetIndicesEx(item,
                 self->extra->length,
@@ -2024,12 +1839,6 @@ element_ass_subscr(PyObject* self_, PyObject* item, PyObject* value)
             }
 
             self->extra->length -= slicelen;
-
-            if (self->extra->names != Py_None) { /* FIXME: could just update dict */
-                Py_DECREF(self->extra->names);
-                self->extra->names = Py_None;
-                Py_INCREF(Py_None);
-            }
 
             /* Discard the recycle list with all the deleted sub-elements */
             Py_XDECREF(recycle);
@@ -2103,12 +1912,6 @@ element_ass_subscr(PyObject* self_, PyObject* item, PyObject* value)
         }
 
         self->extra->length += newlen - slicelen;
-
-        if (self->extra->names != Py_None) { /* FIXME: could just update dict */
-            Py_DECREF(self->extra->names);
-            self->extra->names = Py_None;
-            Py_INCREF(Py_None);
-        }
 
         if (seq) {
             Py_DECREF(seq);
@@ -2198,18 +2001,8 @@ element_getattro(ElementObject* self, PyObject* nameobj)
     } else if (strcmp(name, "attrib") == 0) {
         PyErr_Clear();
         if (!self->extra)
-            create_extra(self, NULL, NULL, NULL);
+            create_extra(self, NULL);
         res = element_get_attrib(self);
-    } else if (strcmp(name, "names") == 0) {
-        PyErr_Clear();
-        if (!self->extra)
-            create_extra(self, NULL, NULL, NULL);
-        res = element_get_names(self);
-    } else if (strcmp(name, "cache") == 0) {
-        PyErr_Clear();
-        if (!self->extra)
-            create_extra(self, NULL, NULL, NULL);
-        res = element_get_cache(self);
     } else if (strcmp(name, "localName") == 0) {
         PyErr_Clear();
         res = self->localName;
@@ -2255,18 +2048,10 @@ element_setattro(ElementObject* self, PyObject* nameobj, PyObject* value)
         Py_INCREF(self->tail);
     } else if (strcmp(name, "attrib") == 0) {
         if (!self->extra)
-            create_extra(self, NULL, NULL, NULL);
+            create_extra(self, NULL);
         Py_DECREF(self->extra->attrib);
         self->extra->attrib = value;
         Py_INCREF(self->extra->attrib);
-    } else if (strcmp(name, "localName") == 0) {
-        Py_DECREF(self->localName);
-        self->localName = value;
-        Py_INCREF(self->localName);
-    } else if (strcmp(name, "ns") == 0) {
-        Py_DECREF(self->ns);
-        self->ns = value;
-        Py_INCREF(self->ns);
     } else if (strcmp(name, "start") == 0) {
         Py_DECREF(self->start);
         self->start = value;
@@ -2301,7 +2086,7 @@ static PyMappingMethods element_as_mapping = {
 
 static PyTypeObject Element_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "iElementTree.Element", sizeof(ElementObject), 0,
+    "cElementTree.Element", sizeof(ElementObject), 0,
     /* methods */
     (destructor)element_dealloc,                    /* tp_dealloc */
     0,                                              /* tp_print */
@@ -2548,7 +2333,7 @@ treebuilder_handle_start(TreeBuilderObject* self, PyObject* tag,
     if (self->element_factory) {
         node = PyObject_CallFunction(self->element_factory, "OO", tag, attrib);
     } else {
-        node = create_new_element(tag, attrib, Py_None, Py_None);
+        node = create_new_element(tag, attrib);
     }
     if (!node) {
         return NULL;
@@ -2810,7 +2595,7 @@ static PyMethodDef treebuilder_methods[] = {
 
 static PyTypeObject TreeBuilder_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "iElementTree.TreeBuilder", sizeof(TreeBuilderObject), 0,
+    "cElementTree.TreeBuilder", sizeof(TreeBuilderObject), 0,
     /* methods */
     (destructor)treebuilder_dealloc,                /* tp_dealloc */
     0,                                              /* tp_print */
@@ -2856,9 +2641,14 @@ static PyTypeObject TreeBuilder_Type = {
 #if defined(USE_EXPAT)
 
 #include "expat/expat.h"
+
+#if defined(USE_PYEXPAT_CAPI)
 #include "pyexpat.h"
-static struct PyExpat_CAPI *expat_capi;
+static struct PyExpat_CAPI* expat_capi;
 #define EXPAT(func) (expat_capi->func)
+#else
+#define EXPAT(func) (XML_##func)
+#endif
 
 static XML_Memory_Handling_Suite ExpatMemoryHandler = {
     PyObject_Malloc, PyObject_Realloc, PyObject_Free};
@@ -3150,8 +2940,7 @@ expat_end_handler(XMLParserObject* self, const XML_Char* tag_in)
             (TreeBuilderObject*) self->target, Py_None,
             (long) XML_GetCurrentLineNumber(self->parser),
             (long) XML_GetCurrentColumnNumber(self->parser),
-            (long) XML_GetCurrentByteIndex(self->parser)
-            );
+            (long) XML_GetCurrentByteIndex(self->parser));
     else if (self->handle_end) {
         tag = makeuniversal(self, tag_in);
         if (tag) {
@@ -3784,7 +3573,7 @@ xmlparser_getattro(XMLParserObject* self, PyObject* nameobj)
 
 static PyTypeObject XMLParser_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "iElementTree.XMLParser", sizeof(XMLParserObject), 0,
+    "cElementTree.XMLParser", sizeof(XMLParserObject), 0,
     /* methods */
     (destructor)xmlparser_dealloc,                  /* tp_dealloc */
     0,                                              /* tp_print */
@@ -3848,7 +3637,7 @@ static struct PyModuleDef cElementTreemodule = {
 };
 
 PyMODINIT_FUNC
-PyInit_cElementTree(void)
+PyInit__cElementTree(void)
 {
     PyObject *m, *g, *temp;
     char *bootstrap;
@@ -3882,6 +3671,9 @@ PyInit_cElementTree(void)
     PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
 
     bootstrap = (
+        "from __future__ import absolute_import\n"
+
+        "from copy import copy, deepcopy\n"
 
         "try:\n"
         "  from xml.etree import ElementTree\n"
@@ -4042,6 +3834,8 @@ PyInit_cElementTree(void)
         "cElementTree.VERSION = '" VERSION "'\n"
         "cElementTree.__version__ = '" VERSION "'\n"
 
+        "cElementTree.XMLParserError = SyntaxError\n"
+        "cElementTree._patched_for_komodo_ = True\n"
        );
 
     if (!PyRun_String(bootstrap, Py_file_input, g, NULL))
@@ -4058,6 +3852,7 @@ PyInit_cElementTree(void)
     elementtree_iter_obj = PyDict_GetItemString(g, "iter");
     elementtree_itertext_obj = PyDict_GetItemString(g, "itertext");
 
+#if defined(USE_PYEXPAT_CAPI)
     /* link against pyexpat */
     expat_capi = PyCapsule_Import(PyExpat_CAPSULE_NAME, 0);
     if (expat_capi) {
@@ -4074,6 +3869,7 @@ PyInit_cElementTree(void)
     } else {
         return NULL;
     }
+#endif
 
     elementtree_parseerror_obj = PyErr_NewException(
         "xml.etree.ElementTree.ParseError", PyExc_SyntaxError, NULL
