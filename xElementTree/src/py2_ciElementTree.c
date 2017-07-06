@@ -1771,8 +1771,9 @@ element_setattr(ElementObject* self, const char* name, PyObject* value)
     }
 
     if (strcmp(name, "tag") == 0) {
-        Py_INCREF(value);
-        Py_SETREF(self->tag, value);
+        Py_DECREF(self->tag);
+        self->tag = value;
+        Py_INCREF(self->tag);
     } else if (strcmp(name, "text") == 0) {
         Py_DECREF(JOIN_OBJ(self->text));
         self->text = value;
@@ -1784,8 +1785,9 @@ element_setattr(ElementObject* self, const char* name, PyObject* value)
     } else if (strcmp(name, "attrib") == 0) {
         if (!self->extra)
             element_new_extra(self, NULL);
-        Py_INCREF(value);
-        Py_SETREF(self->extra->attrib, value);
+        Py_DECREF(self->extra->attrib);
+        self->extra->attrib = value;
+        Py_INCREF(self->extra->attrib);
     } else {
         PyErr_SetString(PyExc_AttributeError, name);
         return -1;
@@ -2014,11 +2016,13 @@ treebuilder_handle_start(TreeBuilderObject* self, PyObject* tag,
     }
     self->index++;
 
-    Py_INCREF(node);
-    Py_SETREF(self->this, (ElementObject*) node);
+    Py_DECREF(self->this);
+    self->this = (ElementObject*)node;
+    Py_INCREF(self->this);
 
-    Py_INCREF(node);
-    Py_SETREF(self->last, (ElementObject*) node);
+    Py_DECREF(self->last);
+    self->last = (ElementObject*)node;
+    Py_INCREF(self->last);
 
     if (treebuilder_append_event(self, self->start_event_obj, node) < 0)
         goto error;
@@ -2947,7 +2951,8 @@ xmlparser_setevents(XMLParserObject* self, PyObject* args)
     target = (TreeBuilderObject*) self->target;
 
     Py_INCREF(events);
-    Py_XSETREF(target->events, events);
+    Py_XDECREF(target->events);
+    target->events = events;
 
     /* clear out existing events */
     Py_CLEAR(target->start_event_obj);
@@ -2972,18 +2977,26 @@ xmlparser_setevents(XMLParserObject* self, PyObject* args)
         Py_INCREF(item);
         event = PyString_AS_STRING(item);
         if (strcmp(event, "start") == 0) {
-            Py_XSETREF(target->start_event_obj, item);
+            Py_INCREF(item);
+            Py_XDECREF(target->start_event_obj);
+            target->start_event_obj = item;
         } else if (strcmp(event, "end") == 0) {
-            Py_XSETREF(target->end_event_obj, item);
+            Py_INCREF(item);
+            Py_XDECREF(target->end_event_obj);
+            target->end_event_obj = item;
         } else if (strcmp(event, "start-ns") == 0) {
-            Py_XSETREF(target->start_ns_event_obj, item);
+            Py_INCREF(item);
+            Py_XDECREF(target->start_ns_event_obj);
+            target->start_ns_event_obj = item;
             EXPAT(SetNamespaceDeclHandler)(
                 self->parser,
                 (XML_StartNamespaceDeclHandler) expat_start_ns_handler,
                 (XML_EndNamespaceDeclHandler) expat_end_ns_handler
                 );
         } else if (strcmp(event, "end-ns") == 0) {
-            Py_XSETREF(target->end_ns_event_obj, item);
+            Py_INCREF(item);
+            Py_XDECREF(target->end_ns_event_obj);
+            target->end_ns_event_obj = item;
             EXPAT(SetNamespaceDeclHandler)(
                 self->parser,
                 (XML_StartNamespaceDeclHandler) expat_start_ns_handler,

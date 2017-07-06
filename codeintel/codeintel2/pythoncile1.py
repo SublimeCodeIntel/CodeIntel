@@ -123,6 +123,15 @@ _gClock = None  # if gathering timing data this is set to time retrieval fn
 _gStartTime = None   # start time of current file being scanned
 
 
+class UnknownNode:
+    pass
+
+
+ast_Starred = getattr(ast, 'Starred', UnknownNode)
+ast_NameConstant = getattr(ast, 'NameConstant', UnknownNode)
+ast_Set = getattr(ast, 'Set', UnknownNode)
+
+
 #---- internal routines and classes
 def _isclass(namespace):
     return (len(namespace["types"]) == 1
@@ -300,9 +309,9 @@ class AST2CIXVisitor(ast.NodeVisitor):
         self.cix = ET.TreeBuilder()
         self.tree = None
 
-    def parse(self):
+    def parse(self, **kwargs):
         """Parse text into a tree and walk the result"""
-        self.tree = ast.parse(self.content)
+        self.tree = ast.parse(self.content, **kwargs)
 
     def walk(self):
         return self.visit(self.tree)
@@ -496,14 +505,16 @@ class AST2CIXVisitor(ast.NodeVisitor):
 
         if node.lineno:
             namespace["line"] = node.lineno
-            namespace["lineend"] = node.lineno
         lastNode = node
         while True:
+            if getattr(lastNode, 'lineno'):
+                namespace["lineend"] = lastNode.lineno
             try:
-                lastNode = list(ast.iter_child_nodes(lastNode))[-1]
-                if hasattr(lastNode, 'lineno'):
-                    namespace["lineend"] = lastNode.lineno
-            except IndexError:
+                try:
+                    lastNode = lastNode.body[-1]
+                except TypeError:
+                    lastNode = list(ast.iter_child_nodes(lastNode))[-1]
+            except (AttributeError, IndexError):
                 break
 
         attributes = []
@@ -552,14 +563,16 @@ class AST2CIXVisitor(ast.NodeVisitor):
         namespace["declaration"] = namespace
         if node.lineno:
             namespace["line"] = node.lineno
-            namespace["lineend"] = node.lineno
         lastNode = node
         while True:
+            if getattr(lastNode, 'lineno'):
+                namespace["lineend"] = lastNode.lineno
             try:
-                lastNode = list(ast.iter_child_nodes(lastNode))[-1]
-                if hasattr(lastNode, 'lineno'):
-                    namespace["lineend"] = lastNode.lineno
-            except IndexError:
+                try:
+                    lastNode = lastNode.body[-1]
+                except TypeError:
+                    lastNode = list(ast.iter_child_nodes(lastNode))[-1]
+            except (AttributeError, IndexError):
                 break
 
         name = node.name
@@ -641,21 +654,8 @@ class AST2CIXVisitor(ast.NodeVisitor):
         # makes this a little bit of pain.
         node_args = node.args
         defaultArgsBaseIndex = len(node_args.args) - len(node_args.defaults)
-        if node_args.kwarg:
-            defaultArgsBaseIndex -= 1
-            if node_args.vararg:
-                defaultArgsBaseIndex -= 1
-                varargsIndex = len(node_args.args) - 2
-            else:
-                varargsIndex = None
-            kwargsIndex = len(node_args.args) - 1
-        elif node_args.vararg:
-            defaultArgsBaseIndex -= 1
-            varargsIndex = len(node_args.args) - 1
-            kwargsIndex = None
-        else:
-            varargsIndex = kwargsIndex = None
         sigArgs = []
+        arguments = []
         for i, node_arg in enumerate(node_args.args):
             argName = node_arg.arg if six.PY3 else node_arg.id
             argument = {"name": argName,
@@ -664,13 +664,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
                         "types": {},
                         "line": node.lineno,
                         "symbols": {}}
-            if i == kwargsIndex:
-                argument["attributes"] = "kwargs"
-                sigArgs.append("**" + argName)
-            elif i == varargsIndex:
-                argument["attributes"] = "varargs"
-                sigArgs.append("*" + argName)
-            elif i >= defaultArgsBaseIndex:
+            if i >= defaultArgsBaseIndex:
                 defaultNode = node_args.defaults[i - defaultArgsBaseIndex]
                 try:
                     argument["default"] = self._getExprRepr(defaultNode)
@@ -686,21 +680,65 @@ class AST2CIXVisitor(ast.NodeVisitor):
                     argument["types"][t] += 1
             else:
                 sigArgs.append(argName)
-
             if i == 0 and parentIsClass:
                 # If this is a class method, then the first arg is the class
                 # instance.
                 className = self.nsstack[-1]["nspath"][-1]
                 argument["types"][className] = 1
                 argument["declaration"] = self.nsstack[-1]
-            arguments = [argument]
-
-            for argument in arguments:
-                if "declaration" not in argument:
-                    argument[
-                        "declaration"] = argument  # namespace dict of the declaration
-                namespace["arguments"].append(argument)
-                namespace["symbols"][argument["name"]] = argument
+            arguments.append(argument)
+        kwonlyargs = getattr(node_args, 'kwonlyargs', [])  # Python 3 keyword only arguments
+        if node_args.vararg or kwonlyargs:
+            node_arg = node_args.vararg
+            argName = (node_arg.arg if six.PY3 else node_arg) if node_arg else ""
+            argument = {"name": argName,
+                        "nspath": nspath + (argName,),
+                        "doc": None,
+                        "types": {},
+                        "line": node.lineno,
+                        "symbols": {}}
+            argument["attributes"] = "varargs"
+            sigArgs.append("*" + argName)
+            arguments.append(argument)
+        for i, node_arg in enumerate(kwonlyargs):
+            argName = node_arg.arg if six.PY3 else node_arg.id
+            argument = {"name": argName,
+                        "nspath": nspath + (argName,),
+                        "doc": None,
+                        "types": {},
+                        "line": node.lineno,
+                        "symbols": {}}
+            defaultNode = node_args.kw_defaults[i]
+            try:
+                argument["default"] = self._getExprRepr(defaultNode)
+            except PythonCILEError as ex:
+                raise PythonCILEError("unexpected default argument node "
+                                        "type for Function '%s': %s"
+                                        % (node.name, ex))
+            sigArgs.append(argName + '=' + argument["default"])
+            for t in self._guessTypes(defaultNode):
+                log.info("guessed type: %s ::= %s", argName, t)
+                if t not in argument["types"]:
+                    argument["types"][t] = 0
+                argument["types"][t] += 1
+            arguments.append(argument)
+        if node_args.kwarg:
+            node_arg = node_args.kwarg
+            argName = node_arg.arg if six.PY3 else node_arg
+            argument = {"name": argName,
+                        "nspath": nspath + (argName,),
+                        "doc": None,
+                        "types": {},
+                        "line": node.lineno,
+                        "symbols": {}}
+            argument["attributes"] = "kwargs"
+            sigArgs.append("**" + argName)
+            arguments.append(argument)
+        for argument in arguments:
+            if "declaration" not in argument:
+                argument["declaration"] = argument  # namespace dict of the declaration
+            namespace["arguments"].append(argument)
+            namespace["symbols"][argument["name"]] = argument
         # Drop first "self" argument from class method signatures.
         # - This is a little bit of a compromise as the "self" argument
         #   should *sometimes* be included in a method's call signature.
@@ -853,7 +891,14 @@ class AST2CIXVisitor(ast.NodeVisitor):
         """
         log.debug("_visitSimpleAssign(lhsNode=%r, rhsNode=%r)", lhsNode,
                   rhsNode)
-        if isinstance(lhsNode, ast.Name):
+        if isinstance(lhsNode, six.text_type):
+            # E.g.:  foo = ...
+            # Assign this to the local namespace, unless there was a
+            # 'global' statement. (XXX Not handling 'global' yet.)
+            ns = self.nsstack[-1]
+            self._assignVariable(lhsNode, ns, rhsNode, line,
+                                 isClassVar=_isclass(ns))
+        elif isinstance(lhsNode, ast.Name):
             # E.g.:  foo = ...
             # Assign this to the local namespace, unless there was a
             # 'global' statement. (XXX Not handling 'global' yet.)
@@ -923,9 +968,11 @@ class AST2CIXVisitor(ast.NodeVisitor):
                                   % lhsNode)
 
     def _handleUnknownAssignment(self, assignNode, lineno):
-        if isinstance(assignNode, ast.Name):
+        if isinstance(assignNode, six.text_type):
             self._visitSimpleAssign(assignNode, None, lineno)
-        elif isinstance(assignNode, ast.Tuple):
+        elif isinstance(assignNode, ast.Name):
+            self._visitSimpleAssign(assignNode, None, lineno)
+        elif isinstance(assignNode, (ast.Tuple, ast.List)):
             for anode in assignNode.elts:
                 self._visitSimpleAssign(anode, None, lineno)
 
@@ -952,8 +999,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             for handler in node.handlers:
                 try:
                     if handler.name:
-                        lineno = handler.lineno
-                        self._handleUnknownAssignment(handler.name, lineno)
+                        self._handleUnknownAssignment(handler.name, handler.lineno)
                     for body in handler.body:
                         self.visit(body)
                 except IndexError:
@@ -1212,7 +1258,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         elif isinstance(node, ast.Tuple):
             items = [self._getExprRepr(c) for c in node.elts]
             s = "(%s)" % ", ".join(items)
-        elif hasattr(ast, 'Set') and isinstance(node, ast.Set):
+        elif isinstance(node, ast_Set):
             items = [self._getExprRepr(c) for c in node.elts]
             s = "{%s}" % ", ".join(items)
         elif isinstance(node, ast.Dict):
@@ -1224,8 +1270,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             s += "("
             allargs = []
             for arg in node.args:
-                ast_Starred = getattr(ast, 'Starred', None)
-                if ast_Starred and isinstance(arg, ast_Starred):  # Python 3.5 (Starred):
+                if isinstance(arg, ast_Starred):  # Python 3.5 (Starred):
                     allargs.append("*" + self._getExprRepr(arg.value))
                 else:
                     allargs.append(self._getExprRepr(arg))
@@ -1279,8 +1324,9 @@ class AST2CIXVisitor(ast.NodeVisitor):
                 ast.BitAnd: "&",
                 ast.FloorDiv: "//",
             }
-            if node.op in ops:
-                s = self._getExprRepr(node.left) + ops[node.op] + self._getExprRepr(node.right)
+            node_op_type = type(node.op)
+            if node_op_type in ops:
+                s = self._getExprRepr(node.left) + ops[node_op_type] + self._getExprRepr(node.right)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 s = self._getExprRepr(node.target) + "=" + self._getExprRepr(node.value)
@@ -1299,8 +1345,9 @@ class AST2CIXVisitor(ast.NodeVisitor):
                 ast.BitAnd: "&=",
                 ast.FloorDiv: "//=",
             }
-            if node.op in ops:
-                s = self._getExprRepr(node.target) + ops[node.op] + self._getExprRepr(node.value)
+            node_op_type = type(node.op)
+            if node_op_type in ops:
+                s = self._getExprRepr(node.target) + ops[node_op_type] + self._getExprRepr(node.value)
         elif isinstance(node, ast.BinOp):
             if isinstance(node.op, ast.BitOr):
                 creprs = []
@@ -1357,7 +1404,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
                 elif i == varargsIndex:
                     sigArgs.append("*" + argName)
                 elif i >= defaultArgsBaseIndex:
-                    defaultNode = node.defaults[i - defaultArgsBaseIndex]
+                    defaultNode = node_args.defaults[i - defaultArgsBaseIndex]
                     try:
                         sigArgs.append(argName + "=" + self._getExprRepr(defaultNode))
                     except PythonCILEError:
@@ -1372,6 +1419,10 @@ class AST2CIXVisitor(ast.NodeVisitor):
             except PythonCILEError:
                 # XXX Work around some trouble cases.
                 s += ":..."
+        elif isinstance(node, ast_NameConstant):
+            return self._getExprRepr(node.value)
+        elif isinstance(node, (bool, int, float, type(None))):
+            return repr(node)
         if s is None:
             raise PythonCILEError("don't know how to get string repr "
                                   "of expression: %r" % node)
@@ -1422,11 +1473,11 @@ class AST2CIXVisitor(ast.NodeVisitor):
         return s
 
 
-def _quietCompilerParse(content):
+def _quietCompilerParse(content, **kwargs):
     oldstderr = sys.stderr
     sys.stderr = StringIO()
     try:
-        return ast.parse(content)
+        return ast.parse(content, **kwargs)
     finally:
         sys.stderr = oldstderr
 
@@ -1580,19 +1631,22 @@ def _convert2to3(src, full=True):
         src = _rx(r'(^|\n)[ \t]*#[^\n]*').sub('\\1', src)
 
         # print foo => print_(foo)
-        src = _rx(r'((?:^|\n|;)[ \t]*)print[ \t]+(?:>>[ \t]*)?([^(\n][^\n]*)').sub('\\1print_(\\2\n)', src)
+        src = _rx(r'((?:^|\n|;|:)[ \t]*)print[ \t]+(?:>>[ \t]*)?([^(\n][^\n]*)').sub('\\1print_(\\2\n)', src)
 
         # exec foo => exec_(foo)
-        src = _rx(r'((?:^|\n|;)[ \t]*)exec[ \t]+([^(\n][^\n]*)').sub('\\1exec_(\\2\n)', src)
+        src = _rx(r'((?:^|\n|;|:)[ \t]*)exec[ \t]+([^(\n][^\n]*)').sub('\\1exec_(\\2\n)', src)
 
         # raise et, ei, tb => raise et(ei).with_traceback(tb)
-        src = _rx(r'((?:^|\n|;)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^(),\n]+)[ \t]*,[ \t]*([^(),\n]+?)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3).with_traceback(\\4\n)', src)
+        src = _rx(r'((?:^|\n|;|:)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^(),\n]+)[ \t]*,[ \t]*([^(),\n]+?)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3).with_traceback(\\4\n)', src)
 
         # raise et, ei => raise et(ei)
-        src = _rx(r'((?:^|\n|;)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^\n]+)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3\n)', src)
+        src = _rx(r'((?:^|\n|;|:)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^\n]+)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3\n)', src)
 
         # except (Foo,) bar => except Foo as bar
-        src = _rx(r'((?:^|\n|;)[ \t]*)except[ \t]+((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?|\((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?\))(?:[ \t]*,[ \t]*|[ \t]+)([_a-zA-Z]+[_a-zA-Z0-9]*)(?=:)').sub('\\1except (\\2) as \\3', src)
+        src = _rx(r'((?:^|\n|;|:)[ \t]*)except[ \t]+((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?|\((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?\))(?:[ \t]*,[ \t]*|[ \t]+)([_a-zA-Z]+[_a-zA-Z0-9]*)[ \t]*(?=:)').sub('\\1except (\\2) as \\3', src)
+
+        # 0x80000000L => 0x80000000
+        src = _rx(r'(\d+)L').sub(r'\1', src)
 
         src = src.replace('\\\x00', '\\\n')
 
@@ -1687,12 +1741,7 @@ def scan_cix(content, filename, md5sum=None, mtime=None, lang="Python"):
     # this is against the W3C spec, but ElementTree wants it lowercase
     tree.write(stream, "utf-8")
 
-    raw_cix = stream.getvalue()
-
-    # XXX: why this 0xA -> &#xA; conversion is necessary?
-    #      It makes no sense, but some tests break without it
-    #      (like cile/scaninputs/path:cdata_close.py)
-    cix = raw_cix.replace(b'\x0a', b'&#xA;')
+    cix = stream.getvalue()
 
     return cix
 
@@ -1759,7 +1808,7 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="Python"):
     moduleName = os.path.splitext(os.path.basename(filename))[0]
     parser = AST2CIXVisitor(moduleName, content=content, lang=lang)
     try:
-        parser.parse()
+        parser.parse(filename=filename.encode('utf-8'))
         if _gClockIt:
             sys.stdout.write(" (parse:%.3fs)" % (_gClock() - _gStartTime))
     except SyntaxError as ex:

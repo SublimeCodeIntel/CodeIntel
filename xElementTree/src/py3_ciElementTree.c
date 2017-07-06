@@ -3429,6 +3429,7 @@ xmlparser_setevents(XMLParserObject *self, PyObject* args)
         }
         if (strcmp(event, "start") == 0) {
             Py_INCREF(item);
+            Py_XDECREF(target->start_event_obj);
             target->start_event_obj = item;
         } else if (strcmp(event, "end") == 0) {
             Py_INCREF(item);

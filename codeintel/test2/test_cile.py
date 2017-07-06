@@ -251,10 +251,13 @@ def _testOneInputFile(self, fpath, tags=None):
 
         # Note that we don't really care about line endings here, so we read
         # both files in universal newlines mode (i.e. translate to \n)
+        # and normalize '&#10;', '&#13;' and '&apos;'
         with io.open(outfile, mode='rt', encoding='utf-8') as fout:
             expected = path_pat.sub(to_native_sep, fout.read())
+            expected = expected.replace('&#xA;', '&#10;').replace('&#xD;', '&#13;').replace('&apos;', '\'')
         with io.open(tmpfile, mode='rt', encoding='utf-8') as ftmp:
             actual = path_pat.sub(to_native_sep, ftmp.read())
+            actual = actual.replace('&#xA;', '&#10;').replace('&#xD;', '&#13;').replace('&apos;', '\'')
         
         if expected != actual:
             do_fail = True
@@ -467,12 +470,12 @@ end
         setattr(ScanInputsTestCase, name, testFunction)
 
 def _encode_for_stdout(s):
-    if sys.stdout.encoding:
-        return s.encode(sys.stdout.encoding, 'backslashreplace')
-    else:
+    encoding = sys.stdout.encoding
+    if not encoding:
         # This is the case when the normal sys.stdout has been
         # replaced by something else, such as a Python file object.
-        return s.encode('ascii', 'backslashreplace')
+        encoding = 'ascii'
+    return s.encode(encoding, 'backslashreplace').decode(encoding)
 
 
 #---- mainline
