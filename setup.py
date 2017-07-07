@@ -205,6 +205,7 @@ ciElementTree_ext = Extension(
 # codeintel
 
 install_requires = [
+    '3to2',
     'apsw',
     'applib',
     'chardet',

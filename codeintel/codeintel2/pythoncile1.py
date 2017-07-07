@@ -130,6 +130,7 @@ class UnknownNode:
 ast_Starred = getattr(ast, 'Starred', UnknownNode)
 ast_NameConstant = getattr(ast, 'NameConstant', UnknownNode)
 ast_Set = getattr(ast, 'Set', UnknownNode)
+ast_Bytes = getattr(ast, 'Bytes', UnknownNode)
 
 
 #---- internal routines and classes
@@ -290,12 +291,13 @@ class AST2CIXVisitor(ast.NodeVisitor):
     """
     DEBUG = 0
 
-    def __init__(self, moduleName=None, content=None, lang="Python"):
+    def __init__(self, moduleName=None, content=None, filename=None, lang='Python'):
         self.lang = lang
         if self.DEBUG is None:
             self.DEBUG = log.isEnabledFor(logging.DEBUG)
         self.moduleName = moduleName
         self.content = content
+        self.filename = filename
         if content and self.DEBUG:
             self.lines = content.splitlines(0)
         else:
@@ -309,9 +311,46 @@ class AST2CIXVisitor(ast.NodeVisitor):
         self.cix = ET.TreeBuilder()
         self.tree = None
 
+        if self.lang == 'Python3':
+            self.bytes = 'bytes'
+            self.unicode = 'str'
+            self.b = "b"
+            self.u = ""
+        else:
+            self.bytes = 'str'
+            self.unicode = 'unicode'
+            self.b = ""
+            self.u = "u"
+        self.string_type_map = {
+            type(b''): self.bytes,
+            type(u""): self.unicode,
+        }
+        self.string_prefix_map = {
+            type(b''): self.b,
+            type(u""): self.u,
+        }
+
+    def string_type(self, obj):
+        return self.string_type_map[type(obj)]
+
+    def string_repr(self, obj):
+        r = repr(obj)
+        if r[0] in 'bu':
+            r = r[1:]
+        return self.string_prefix_map[type(obj)] + r
+
     def parse(self, **kwargs):
         """Parse text into a tree and walk the result"""
-        self.tree = ast.parse(self.content, **kwargs)
+        convertor = None
+        if self.lang == 'Python3':
+            if six.PY2:
+                convertor = _convert3to2
+        else:
+            # Make Python2 code as compatible with pythoncile's Python3
+            # parser as neessary for codeintel purposes.
+            if six.PY3:
+                convertor = _convert2to3
+        self.tree = _getAST(convertor, self.content, self.filename, **kwargs)
 
     def walk(self):
         return self.visit(self.tree)
@@ -967,28 +1006,28 @@ class AST2CIXVisitor(ast.NodeVisitor):
             raise PythonCILEError("unexpected type of LHS of assignment: %r"
                                   % lhsNode)
 
-    def _handleUnknownAssignment(self, assignNode, lineno):
-        if isinstance(assignNode, six.text_type):
-            self._visitSimpleAssign(assignNode, None, lineno)
-        elif isinstance(assignNode, ast.Name):
-            self._visitSimpleAssign(assignNode, None, lineno)
-        elif isinstance(assignNode, (ast.Tuple, ast.List)):
-            for anode in assignNode.elts:
-                self._visitSimpleAssign(anode, None, lineno)
+    def _handleUnknownAssignment(self, lhsNode, rhsNode, lineno):
+        if isinstance(lhsNode, six.text_type):
+            self._visitSimpleAssign(lhsNode, rhsNode, lineno)
+        elif isinstance(lhsNode, ast.Name):
+            self._visitSimpleAssign(lhsNode, rhsNode, lineno)
+        elif isinstance(lhsNode, (ast.Tuple, ast.List)):
+            for anode in lhsNode.elts:
+                self._visitSimpleAssign(anode, rhsNode, lineno)
 
     def visit_For(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, getattr(node, 'lineno', '?'), self.lines and hasattr(node, 'lineno') and self.lines[node.lineno - 1], node._fields)
         # E.g.:
         #   for foo in ...
         # None: don't bother trying to resolve the type of the RHS
-        self._handleUnknownAssignment(node.target, node.lineno)
+        self._handleUnknownAssignment(node.target, None, node.lineno)
         self.generic_visit(node)
 
     if six.PY3:  # Python 3 only
         def visit_With(self, node):
             log.info("visit_%s:%s: %r %r", node.__class__.__name__, getattr(node, 'lineno', '?'), self.lines and hasattr(node, 'lineno') and self.lines[node.lineno - 1], node._fields)
             for item in node.items:
-                self._handleUnknownAssignment(item.context_expr, node.lineno)
+                self._handleUnknownAssignment(item.optional_vars, item.context_expr, node.lineno)
             self.generic_visit(node)
 
         def visit_Try(self, node):
@@ -999,7 +1038,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             for handler in node.handlers:
                 try:
                     if handler.name:
-                        self._handleUnknownAssignment(handler.name, handler.lineno)
+                        self._handleUnknownAssignment(handler.name, None, handler.lineno)
                     for body in handler.body:
                         self.visit(body)
                 except IndexError:
@@ -1016,7 +1055,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             log.info("visit_%s:%s: %r %r", node.__class__.__name__, getattr(node, 'lineno', '?'), self.lines and hasattr(node, 'lineno') and self.lines[node.lineno - 1], node._fields)
             for body in node.body:
                 self.visit(body)
-            self._handleUnknownAssignment(node.context_expr, node.lineno)
+            self._handleUnknownAssignment(node.optional_vars, node.context_expr, node.lineno)
             self.generic_visit(node)
 
         def visit_TryFinally(self, node):
@@ -1036,7 +1075,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
                 try:
                     if handler.name:
                         lineno = handler.lineno
-                        self._handleUnknownAssignment(handler.name, lineno)
+                        self._handleUnknownAssignment(handler.name, None, lineno)
                     for body in handler.body:
                         self.visit(body)
                 except IndexError:
@@ -1062,8 +1101,8 @@ class AST2CIXVisitor(ast.NodeVisitor):
                 expressible in CITDL (CITDL does not attempt to be a panacea).
         """
         log.debug("_resolveObjectRef(expr=%r)", expr)
-        if isinstance(expr, ast.Name):
-            name = expr.id
+        if isinstance(expr, (ast.Name, ast_NameConstant)):
+            name = expr.id if isinstance(expr, ast.Name) else repr(expr.value)
             nspath = self.nsstack[-1]["nspath"]
             for i in range(len(nspath), -1, -1):
                 ns = self.st[nspath[:i]]
@@ -1088,12 +1127,12 @@ class AST2CIXVisitor(ast.NodeVisitor):
                 return (None, citdl)
                 # XXX Could optimize here for common built-in attributes. E.g.,
                 #    we *know* that str.join() returns a string.
-            elif isinstance(expr.value, (ast.Str, getattr(ast, 'Bytes', ast.Str))):  # ast.Bytes exists only in Python 3
+            elif isinstance(expr.value, (ast.Str, ast_Bytes)):  # ast.Bytes exists only in Python 3
                 # Special case: specifically refer to type object for
                 # attribute access on constants, e.g.:
                 #   ' '.join
                 citdl = "__builtins__.%s.%s"\
-                        % ((type(expr.value.s).__name__), expr.attr)
+                        % ((self.string_type(expr.value.s)), expr.attr)
                 return (None, citdl)
                 # XXX Could optimize here for common built-in attributes. E.g.,
                 #    we *know* that str.join() returns a string.
@@ -1101,9 +1140,9 @@ class AST2CIXVisitor(ast.NodeVisitor):
             # Special case: specifically refer to type object for constants.
             citdl = "__builtins__.%s" % type(expr.n).__name__
             return (None, citdl)
-        elif isinstance(expr, (ast.Str, getattr(ast, 'Bytes', ast.Str))):
+        elif isinstance(expr, (ast.Str, ast_Bytes)):
             # Special case: specifically refer to type object for constants.
-            citdl = "__builtins__.%s" % type(expr.s).__name__
+            citdl = "__builtins__.%s" % self.string_type(expr.s)
             return (None, citdl)
         elif isinstance(expr, ast.Call):
             # XXX Would need flow analysis to have an object dict for whatever
@@ -1128,20 +1167,19 @@ class AST2CIXVisitor(ast.NodeVisitor):
         ts = []
         if isinstance(expr, ast.Num):
             ts = [type(expr.n).__name__]
-        elif isinstance(expr, (ast.Str, getattr(ast, 'Bytes', ast.Str))):
-            ts = [type(expr.s).__name__]
+        elif isinstance(expr, (ast.Str, ast_Bytes)):
+            ts = [self.string_type(expr.s)]
         elif isinstance(expr, ast.Tuple):
             ts = [tuple.__name__]
         elif isinstance(expr, (ast.List, ast.ListComp)):
             ts = [list.__name__]
-        elif hasattr(ast, 'Set') and isinstance(expr, ast.Set):
+        elif isinstance(expr, ast_Set):
             ts = [set.__name__]
         elif isinstance(expr, ast.Dict):
             ts = [dict.__name__]
         elif isinstance(expr, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
                                ast.Pow)):
-            order = ["int", "bool", "long", "float", "complex", "string",
-                     "unicode"]
+            order = ["int", "bool", "long", "float", "complex", self.bytes, self.unicode]
             possibles = self._guessTypes(
                 expr.left) + self._guessTypes(expr.right)
             ts = []
@@ -1172,7 +1210,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         elif isinstance(expr, ast.Slice):
             ts = [list.__name__]
 
-        elif isinstance(expr, (ast.Name, ast.Attribute)):
+        elif isinstance(expr, (ast.Name, ast.Attribute, ast_NameConstant)):
             variable, citdl = self._resolveObjectRef(expr)
             if variable:
                 if _isclass(variable) or _isfunction(variable):
@@ -1248,8 +1286,8 @@ class AST2CIXVisitor(ast.NodeVisitor):
             s = node.id
         elif isinstance(node, ast.Num):
             s = repr(node.n)
-        elif isinstance(node, (ast.Str, getattr(ast, 'Bytes', ast.Str))):
-            s = repr(node.s)
+        elif isinstance(node, (ast.Str, ast_Bytes)):
+            s = self.string_repr(node.s)
         elif isinstance(node, ast.Attribute):
             s = '.'.join([self._getExprRepr(node.value), node.attr])
         elif isinstance(node, ast.List):
@@ -1276,7 +1314,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
                     allargs.append(self._getExprRepr(arg))
             for keyword in node.keywords:
                 if keyword.arg:
-                    allargs.append(keyword.arg)
+                    allargs.append("%s=%s" % (keyword.arg, self._getExprRepr(keyword.value)))
                 else:  # Python 3.5 (kwargs):
                     allargs.append("**" + self._getExprRepr(keyword.value))
             if getattr(node, 'starargs', None):
@@ -1352,7 +1390,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             if isinstance(node.op, ast.BitOr):
                 creprs = []
                 for cnode in [node.left, node.right]:
-                    if isinstance(cnode, (ast.Num, ast.Str, getattr(ast, 'Bytes', ast.Str))):
+                    if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
                         crepr = self._getExprRepr(cnode)
                     else:
                         crepr = "(%s)" % self._getExprRepr(cnode)
@@ -1361,7 +1399,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             elif isinstance(node.op, ast.BitAnd):
                 creprs = []
                 for cnode in [node.left, node.right]:
-                    if isinstance(cnode, (ast.Num, ast.Str, getattr(ast, 'Bytes', ast.Str))):
+                    if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
                         crepr = self._getExprRepr(cnode)
                     else:
                         crepr = "(%s)" % self._getExprRepr(cnode)
@@ -1370,7 +1408,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             elif isinstance(node.op, ast.BitXor):
                 creprs = []
                 for cnode in [node.left, node.right]:
-                    if isinstance(cnode, (ast.Num, ast.Str, getattr(ast, 'Bytes', ast.Str))):
+                    if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
                         crepr = self._getExprRepr(cnode)
                     else:
                         crepr = "(%s)" % self._getExprRepr(cnode)
@@ -1420,9 +1458,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
                 # XXX Work around some trouble cases.
                 s += ":..."
         elif isinstance(node, ast_NameConstant):
-            return self._getExprRepr(node.value)
-        elif isinstance(node, (bool, int, float, type(None))):
-            return repr(node)
+            return repr(node.value)
         if s is None:
             raise PythonCILEError("don't know how to get string repr "
                                   "of expression: %r" % node)
@@ -1440,10 +1476,12 @@ class AST2CIXVisitor(ast.NodeVisitor):
         s = None
         if isinstance(node, ast.Name):
             s = node.id
+        if isinstance(node, ast_NameConstant):
+            s = repr(node.value)
         elif isinstance(node, ast.Num):
             s = repr(node.n)
-        elif isinstance(node, (ast.Str, getattr(ast, 'Bytes', ast.Str))):
-            s = repr(node.s)
+        elif isinstance(node, (ast.Str, ast_Bytes)):
+            s = self.string_repr(node.s)
         elif isinstance(node, ast.Attribute):
             exprRepr = self._getCITDLExprRepr(node.value, _level + 1)
             if exprRepr is None:
@@ -1454,7 +1492,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
             s = "[]"
         elif isinstance(node, ast.Tuple):
             s = "()"
-        elif hasattr(ast, 'Set') and isinstance(node, ast.Set):
+        elif isinstance(node, ast_Set):
             s = "set()"
         elif isinstance(node, ast.Dict):
             s = "{}"
@@ -1491,34 +1529,35 @@ def _quietCompile(source, filename, kind):
         sys.stderr = oldstderr
 
 
-def _getAST(content):
+def _getAST(convertor, content, f, **kwargs):
     """Return an AST for the given Python content.
 
     If cannot, raise an error describing the problem.
     """
-    # EOL issues:
-    # ast.parse() can't handle '\r\n' EOLs on Mac OS X and can't
-    # handle '\r' EOLs on any platform. Let's just always normalize.
-    # Unfortunately this is work only for the exceptional case. The
-    # problem is most acute on the Mac.
-    content = '\n'.join(content.splitlines(0))
-    # Is this faster?
-    #   content = content.replace('\r\n', '\n').replace('\r', '\n')
 
     errlineno = None  # line number of a SyntaxError
     ast_ = None
     try:
-        ast_ = _quietCompilerParse(content)
+        if convertor:
+            content_orig = content
+            content = convertor(content_orig, f)
+            try:
+                ast_ = _quietCompilerParse(content, **kwargs)
+            except Exception:
+                content = convertor(content_orig, f, refactor=True)
+                if not content:
+                    raise
+                ast_ = _quietCompilerParse(content, **kwargs)
+        else:
+            ast_ = _quietCompilerParse(content, **kwargs)
     except SyntaxError as ex:
         errlineno = ex.lineno
         log.debug("compiler parse #1: syntax error on line %d", errlineno)
     except parser.ParserError as ex:
         log.debug("compiler parse #1: parse error")
         # Try to get the offending line number.
-        # compile() only likes LFs for EOLs.
-        lfContent = content.replace("\r\n", "\n").replace("\r", "\n")
         try:
-            _quietCompile(lfContent, "dummy.py", "exec")
+            _quietCompile(content, "dummy.py", "exec")
         except SyntaxError as ex2:
             errlineno = ex2.lineno
         except:
@@ -1544,17 +1583,15 @@ def _getAST(content):
 
         errlineno2 = None
         try:
-            ast_ = _quietCompilerParse(newContent)
+            ast_ = _quietCompilerParse(newContent, **kwargs)
         except SyntaxError as ex:
             errlineno2 = ex.lineno
             log.debug("compiler parse #2: syntax error on line %d", errlineno)
         except parser.ParserError as ex:
             log.debug("compiler parse #2: parse error")
             # Try to get the offending line number.
-            # compile() only likes LFs for EOLs.
-            lfContent = newContent.replace("\r\n", "\n").replace("\r", "\n")
             try:
-                _quietCompile(lfContent, "dummy.py", "exec")
+                _quietCompile(content, "dummy.py", "exec")
             except SyntaxError as ex2:
                 errlineno2 = ex2.lineno
             except:
@@ -1586,13 +1623,23 @@ def _rx(pattern, flags=0):
     return _rx_cache[pattern]
 
 
-def _convert3to2(src):
-    # XXX: this might be much faster to do all this stuff by manipulating
-    #      parse trees produced by tdparser
+from lib2to3 import refactor
+
+_rt23 = refactor.RefactoringTool(filter(lambda x: x not in ('lib2to3.fixes.fix_itertools_imports'), refactor.get_fixers_from_package('lib2to3.fixes')))
+_rt32 = refactor.RefactoringTool(filter(lambda x: x not in ('lib3to2.fixes.fix_absimport', 'lib3to2.fixes.fix_itertools', 'lib3to2.fixes.fix_open'), refactor.get_fixers_from_package('lib3to2.fixes')))
+
+
+def _convert3to2(content, filename, refactor=False):
+    if refactor:
+        try:
+            return u"%s" % _rt23.refactor_string(content, filename)
+        except Exception:
+            pass
+
+    src = content
 
     # except Foo as bar => except (Foo,) bar
-    src = _rx(r'(\bexcept\s*)(\S.+?)\s+as\s+(\w+)\s*:').sub(
-        r'\1(\2,), \3:', src)
+    src = _rx(r'(\bexcept\s*)(\S.+?)\s+as\s+(\w+)\s*:').sub(r'\1(\2,), \3:', src)
 
     # 0o123 => 123
     src = _rx(r'\b0[oO](\d+)').sub(r'\1', src)
@@ -1617,38 +1664,38 @@ def _convert3to2(src):
 
     return src
 
-def _convert2to3(src, full=True):
-    """
-    This might be much faster to do all this stuff by manipulating
-    parse trees produced by tdparser.
 
-    full - converts all of the 2 code to 3 as much as possible for syntax not to fail.
-    """
-    if full:
-        src = src.replace('\\\n', '\\\x00')
+def _convert2to3(content, filename, refactor=False):
+    if refactor:
+        try:
+            return u"%s" % _rt32.refactor_string(content, filename)
+        except Exception:
+            pass
 
-        # Remove comments (as stuff that looks like code within comments could break other rules below)
-        src = _rx(r'(^|\n)[ \t]*#[^\n]*').sub('\\1', src)
+    src = content
 
-        # print foo => print_(foo)
-        src = _rx(r'((?:^|\n|;|:)[ \t]*)print[ \t]+(?:>>[ \t]*)?([^(\n][^\n]*)').sub('\\1print_(\\2\n)', src)
+    src = src.replace('\\\n', '\\\x00')
 
-        # exec foo => exec_(foo)
-        src = _rx(r'((?:^|\n|;|:)[ \t]*)exec[ \t]+([^(\n][^\n]*)').sub('\\1exec_(\\2\n)', src)
+    # Remove comments (as stuff that looks like code within comments could break other rules below)
+    src = _rx(r'(^|\n)[ \t]*#[^\n]*').sub('\\1', src)
 
-        # raise et, ei, tb => raise et(ei).with_traceback(tb)
-        src = _rx(r'((?:^|\n|;|:)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^(),\n]+)[ \t]*,[ \t]*([^(),\n]+?)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3).with_traceback(\\4\n)', src)
+    # print foo => print_(foo)
+    src = _rx(r'((?:^|\n|;|:)[ \t]*)print[ \t]+(?:>>[ \t]*)?([^(\n][^\n]*)').sub('\\1print_(\\2\n)', src)
 
-        # raise et, ei => raise et(ei)
-        src = _rx(r'((?:^|\n|;|:)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^\n]+)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3\n)', src)
+    # exec foo => exec_(foo)
+    src = _rx(r'((?:^|\n|;|:)[ \t]*)exec[ \t]+([^(\n][^\n]*)').sub('\\1exec_(\\2\n)', src)
 
-        # except (Foo,) bar => except Foo as bar
-        src = _rx(r'((?:^|\n|;|:)[ \t]*)except[ \t]+((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?|\((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?\))(?:[ \t]*,[ \t]*|[ \t]+)([_a-zA-Z]+[_a-zA-Z0-9]*)[ \t]*(?=:)').sub('\\1except (\\2) as \\3', src)
+    # raise et, ei, tb => raise et(ei).with_traceback(tb)
+    src = _rx(r'((?:^|\n|;|:)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^(),\n]+)[ \t]*,[ \t]*([^(),\n]+?)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3).with_traceback(\\4\n)', src)
 
-        # 0x80000000L => 0x80000000
-        src = _rx(r'(\d+)L').sub(r'\1', src)
+    # raise et, ei => raise et(ei)
+    src = _rx(r'((?:^|\n|;|:)[ \t]*)raise[ \t]+([^(),\n]+?)[ \t]*,[ \t]*([^\n]+)(?=[ \t]|\n|$)').sub('\\1raise \\2(\\3\n)', src)
 
-        src = src.replace('\\\x00', '\\\n')
+    # except (Foo,) bar => except Foo as bar
+    src = _rx(r'((?:^|\n|;|:)[ \t]*)except[ \t]+((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?|\((?:[^(), \t\n:]+?)(?:[ \t]*,[ \t]*(?!as[ \t])[^(), \t\n:]+?)*,?\))(?:[ \t]*,[ \t]*|[ \t]+)([_a-zA-Z]+[_a-zA-Z0-9]*)[ \t]*(?=:)').sub('\\1except (\\2) as \\3', src)
+
+    # 0x80000000L => 0x80000000
+    src = _rx(r'(\d+)L').sub(r'\1', src)
 
     # 0123 => 0o123
     src = _rx(r'\b(?<!\.)0(\d+)').sub(r'0o\1', src)
@@ -1659,7 +1706,10 @@ def _convert2to3(src, full=True):
     # long => int
     src = _rx(r'\blong\b').sub(r'int', src)
 
+    src = src.replace('\\\x00', '\\\n')
+
     return src
+
 
 def _clean_func_args(defn):
     argdef = defn.group(2)
@@ -1774,6 +1824,10 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="Python"):
     Python 'compiler' package for processing, therefore the given Python
     content must be syntactically correct.
     """
+    global _gStartTime
+    if _gClockIt:
+        _gStartTime = _gClock()
+
     log.info("scan '%s'", filename)
     if md5sum is None:
         md5sum = md5(content.encode('utf-8')).hexdigest()
@@ -1784,20 +1838,17 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="Python"):
     # funky *whitespace* at the end of the file.
     content = content.rstrip() + '\n'
 
-    if lang == 'Python3':
-        if six.PY2:
-            content = _convert3to2(content)
-            if _gClockIt:
-                sys.stdout.write(" (convert:%.3fs)" % (_gClock() - _gStartTime))
-    else:
-        # Make Python2 code as compatible with pythoncile's Python3
-        # parser as neessary for codeintel purposes.
-        if six.PY3:
-            content = _convert2to3(content)
-            if _gClockIt:
-                sys.stdout.write(" (convert:%.3fs)" % (_gClock() - _gStartTime))
-
+    # Remove encoding string (it's already unicode)
     content = _rx(r'^[ \t\v]*#.*?coding[:=].*', re.MULTILINE).sub('', content)
+
+    # EOL issues:
+    # ast.parse() can't handle '\r\n' EOLs on Mac OS X and can't
+    # handle '\r' EOLs on any platform. Let's just always normalize.
+    # Unfortunately this is work only for the exceptional case. The
+    # problem is most acute on the Mac.
+    content = '\n'.join(content.splitlines(0))
+    # Is this faster?
+    #   content = content.replace('\r\n', '\n').replace('\r', '\n')
 
     # The 'path' attribute must use normalized dir separators.
     if sys.platform.startswith("win"):
@@ -1806,13 +1857,12 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="Python"):
         path = filename
 
     moduleName = os.path.splitext(os.path.basename(filename))[0]
-    parser = AST2CIXVisitor(moduleName, content=content, lang=lang)
+    parser = AST2CIXVisitor(moduleName, content=content, filename=filename, lang=lang)
     try:
         parser.parse(filename=filename.encode('utf-8'))
         if _gClockIt:
             sys.stdout.write(" (parse:%.3fs)" % (_gClock() - _gStartTime))
-    except SyntaxError as ex:
-        log.warning("%s Syntax Error in %r: %s", lang, path, str(ex))
+    except Exception as ex:
         file = ET.Element('file', _et_attrs(dict(lang=lang,
                                                  path=path,
                                                  error=str(ex))))
