@@ -620,6 +620,15 @@ class TrgTestCase(CodeIntelTestCase):
         #self.assertTriggerMatches("\texcept Ex<|>",
         #                          name=name, implicit=False)
 
+        self.assertTriggerMatches("raise <|>",
+                                  name=name)
+        self.assertTriggerMatches("  raise <|>",
+                                  name=name)
+        self.assertTriggerMatches("\traise <|>",
+                                  name=name)
+        #self.assertTriggerMatches("\traise Ex<|>",
+        #                          name=name, implicit=False)
+
     def test_complete_magic_symbols(self):
         name = "%s-complete-magic-symbols" % self.lang.lower()
         self.assertTriggerMatches("__<|>", name=name, symbolstype="global")

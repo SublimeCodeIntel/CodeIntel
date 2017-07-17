@@ -743,9 +743,9 @@ class PythonBuffer(CitadelBuffer):
 
         # Quick out if the preceding char isn't a trigger char.
         # Note: Cannot use this now that we have a 2-char locals trigger.
-        #if last_char not in " .(@_":
+        #if last_char not in " .(@_,":
         #    if DEBUG:
-        #        print "trg_from_pos: no: %r is not in ' .(@'_" % last_char
+        #        print "trg_from_pos: no: %r is not in ' .(@'_," % last_char
         #    return None
 
         style = accessor.style_at_pos(last_pos)
@@ -804,7 +804,7 @@ class PythonBuffer(CitadelBuffer):
 
             # Typing a space is very common so lets have a quick out before
             # doing the more correct processing:
-            if last_pos-1 < 0 or accessor.char_at_pos(last_pos-1) not in "tm,":
+            if last_pos-1 < 0 or accessor.char_at_pos(last_pos-1) not in "tme,":
                 return None
 
             working_text = accessor.text_range(max(0,last_pos-200),
@@ -830,6 +830,10 @@ class PythonBuffer(CitadelBuffer):
                                imp_prefix=imp_prefix)
 
             if line == "except" or line.endswith(" except"):
+                return Trigger(self.lang, TRG_FORM_CPLN,
+                               "available-exceptions", pos, implicit)
+
+            if line == "raise" or line.endswith(" raise"):
                 return Trigger(self.lang, TRG_FORM_CPLN,
                                "available-exceptions", pos, implicit)
 
@@ -1021,6 +1025,17 @@ class PythonBuffer(CitadelBuffer):
                 if DEBUG: print("trg_from_pos: no: no chars preceding '('")
             return None
 
+        elif last_char == ',':
+            working_text = accessor.text_range(max(0, last_pos - 200), last_pos)
+            line = self._last_logical_line(working_text).rstrip()
+            if line:
+                last_bracket = line.rfind("(")
+                pos = (pos - (len(line) - last_bracket))
+                return Trigger(self.lang, TRG_FORM_CALLTIP,
+                               "call-signature", pos, implicit)
+            else:
+                return None
+
         elif pos >= 2 and style in (self.identifier_style, self.keyword_style):
             # 2 character trigger for local symbols
             if DEBUG:
@@ -1047,7 +1062,7 @@ class PythonBuffer(CitadelBuffer):
             preceeding_text = accessor.text_range(start, last_pos-2).strip()
             if preceeding_text:
                 first_word = preceeding_text.split(" ")[0]
-                if first_word in ("class", "def", "import", "from", "except"):
+                if first_word in ("class", "def", "import", "from", "except", "raise"):
                     if DEBUG:
                         print("  no trigger, as starts with %r" % (first_word, ))
                     # Don't trigger over the top of another trigger, i.e.

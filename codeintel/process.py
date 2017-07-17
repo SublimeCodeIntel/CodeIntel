@@ -64,6 +64,13 @@ except ImportError:
     if sys.platform != "win32" and sys.version_info[0] != 3:
         log.warn("Could not import subprocess32 module, falling back to subprocess module")
 
+try:
+    from xpcom import components
+except ImportError as e:
+    class components:
+        @staticmethod
+        def ProxyToMainThread(fn):
+            return fn
 
 CREATE_NEW_CONSOLE = 0x10 # same as win32process.CREATE_NEW_CONSOLE
 CREATE_NEW_PROCESS_GROUP = 0x200 # same as win32process.CREATE_NEW_PROCESS_GROUP
@@ -227,6 +234,8 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
     Popen = WindowsKillablePopen
 
 class ProcessOpen(Popen):
+
+    @components.ProxyToMainThread
     def __init__(self, cmd, cwd=None, env=None, flags=None,
                  stdin=PIPE, stdout=PIPE, stderr=PIPE,
                  universal_newlines=True):

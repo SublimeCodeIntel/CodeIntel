@@ -38,6 +38,7 @@
 #   Trent Mick (TrentM@ActiveState.com)
 
 r"""ci2 -- playing with some new CodeIntel ideas"""
+from __future__ import absolute_import
 
 __revision__ = "$Id$"
 __version_info__ = (1, 0, 0)
