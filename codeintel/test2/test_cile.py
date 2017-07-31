@@ -238,6 +238,12 @@ def _testOneInputFile(self, fpath, tags=None):
         print(str(error))
         print("*" * 50)
 
+    generateMissing = False
+    if not os.path.exists(outfile) and generateMissing:
+        with io.open(outfile, mode='wt', encoding='utf-8') as fout:
+            with io.open(tmpfile, mode='rt', encoding='utf-8') as ftmp:
+                fout.write(ftmp.read())
+
     # Verify that the results are as expected.
     if os.path.exists(outfile) and error:
         self.fail("scanning '%s' raised an error but success was "
@@ -371,7 +377,7 @@ def _addUnicodeScanInputTests():
     # the CILEs.
     ext_from_lang = {
         "perl": ".pl", "python": ".py", "php": ".php", "tcl": ".tcl",
-        "javascript": ".js", "ruby": ".rb",
+        "javascript": ".js", "ruby": ".rb", "es": ".es",
     }
     content_and_cix_from_lang = {
         "perl": (
@@ -444,6 +450,17 @@ end
   </file>
 </codeintel>
 """),
+        "es": (
+            r"function foo { dump('hi\n'); }",
+            u"""\
+<codeintel version="2.0">
+  <file lang="ES" mtime="42" path="scan_inputs/unicode/&#1083;&#1097;/foo.es">
+    <scope ilk="blob" lang="ES" name="foo.es" src="scan_inputs/unicode/&#1083;&#1097;/foo.es">
+      <scope ilk="function" line="1" lineend="1" name="foo" signature="foo()" />
+    </scope>
+  </file>
+</codeintel>
+"""),
     }
     
     u_inputs_dir = join(gInputsDir, "unicode", unicode_marker)
@@ -451,7 +468,7 @@ end
     for d in (u_inputs_dir, u_outputs_dir):
         if not exists(d):
             os.makedirs(d)
-    for lang in ["perl", "python", "php", "tcl", "javascript", "ruby"]:
+    for lang in ["perl", "python", "php", "tcl", "javascript", "ruby", "es"]:
         ext = ext_from_lang[lang]
         inpath = join(u_inputs_dir, "foo"+ext)
         outpath = join(u_outputs_dir, "foo"+ext+".cix")

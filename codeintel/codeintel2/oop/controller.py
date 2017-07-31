@@ -77,8 +77,8 @@ class OOPEvalController(EvalController):
         self.driver.fail(request=self.request, message="aborted")
 
     def done(self, reason):
-        log.debug("done: %s %s", reason,
-                  "(aborted)" if self.is_aborted() else "")
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug("done: %s %s\n%s", reason, "(aborted)" if self.is_aborted() else "", self.log_stream.getvalue())
 
         self.has_sent_response = True
 

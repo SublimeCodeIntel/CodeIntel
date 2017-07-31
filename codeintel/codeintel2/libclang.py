@@ -5,7 +5,17 @@ import copy
 import shlex
 import threading
 
-from clang.cindex import Index, Config, TranslationUnitLoadError, CompilationDatabase, TranslationUnit, File, SourceLocation, Cursor
+from clang import cindex
+# Monkeypatch cindex to avoid AttributeError when __del__ is called during program shutdown (Python 2 only):
+cindex._CXString.__del__ = lambda self: cindex and cindex.conf.lib.clang_disposeString(self)
+cindex.Diagnostic.__del__ = lambda self: cindex and cindex.conf.lib.clang_disposeDiagnostic(self)
+cindex.TokenGroup.__del__ = lambda self: cindex and cindex.conf.lib.clang_disposeTokens(self._tu, self._memory, self._count)
+cindex.CodeCompletionResults.__del__ = lambda self: cindex and cindex.conf.lib.clang_disposeCodeCompleteResults(self)
+cindex.Index.__del__ = lambda self: cindex and cindex.conf.lib.clang_disposeIndex(self)
+cindex.TranslationUnit.__del__ = lambda self: cindex and cindex.conf.lib.clang_disposeTranslationUnit(self)
+cindex.CompileCommands.__del__ = lambda self: cindex and cindex.conf.lib.clang_CompileCommands_dispose(self.ccmds)
+cindex.CompilationDatabase.__del__ = lambda self: cindex and cindex.conf.lib.clang_CompilationDatabase_dispose(self)
+
 
 import logging
 logger = logging.getLogger(__name__)
@@ -153,15 +163,15 @@ class ClangCompleter(object):
 
         if library_path:
             if os.path.isdir(library_path):
-                Config.set_library_path(library_path)
+                cindex.Config.set_library_path(library_path)
             else:
-                Config.set_library_file(library_path)
+                cindex.Config.set_library_file(library_path)
 
-        Config.set_compatibility_check(False)
+        cindex.Config.set_compatibility_check(False)
 
         # Index
         try:
-            self.index = Index.create()
+            self.index = cindex.Index.create()
         except Exception as e:
             if library_path:
                 suggestion = "Are you sure '%s' contains libclang?" % library_path
@@ -184,7 +194,7 @@ class ClangCompleter(object):
 
         self.translationUnits = {}
         if compilation_database_path:
-            self.compilation_database = CompilationDatabase.fromDirectory(compilation_database_path)
+            self.compilation_database = cindex.CompilationDatabase.fromDirectory(compilation_database_path)
         else:
             self.compilation_database = None
 
@@ -255,7 +265,7 @@ class ClangCompleter(object):
         currentFile = ('test.c', '#include "stddef.h"')
         try:
             tu = index.parse('test.c', args, [currentFile], flags)
-        except TranslationUnitLoadError:
+        except cindex.TranslationUnitLoadError:
             return 0
         return len(tu.diagnostics) == 0
 
@@ -369,10 +379,10 @@ class ClangCompleter(object):
                 tu.reparse(unsaved_files)
             return tu
 
-        flags = TranslationUnit.PARSE_PRECOMPILED_PREAMBLE | TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+        flags = cindex.TranslationUnit.PARSE_PRECOMPILED_PREAMBLE | cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
         try:
             tu = self.index.parse(fileName, args, unsaved_files, flags)
-        except TranslationUnitLoadError:
+        except cindex.TranslationUnitLoadError:
             return None
 
         self.translationUnits[fileName] = tu
@@ -438,9 +448,9 @@ class ClangCompleter(object):
                 print("Couldn't get the TranslationUnit")
                 return None
 
-            f = File.from_name(tu, fileName)
-            loc = SourceLocation.from_position(tu, f, line, column + 1)
-            cursor = Cursor.from_location(tu, loc)
+            f = cindex.File.from_name(tu, fileName)
+            loc = cindex.SourceLocation.from_position(tu, f, line, column + 1)
+            cursor = cindex.Cursor.from_location(tu, loc)
             defs = [cursor.get_definition(), cursor.referenced]
 
             for d in defs:

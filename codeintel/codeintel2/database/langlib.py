@@ -53,7 +53,7 @@ from io import BytesIO
 import codecs
 import copy
 
-import apsw # for SQLite symbol database
+# import apsw # for SQLite symbol database
 
 import ciElementTree as ET
 from codeintel2.common import *
@@ -963,20 +963,20 @@ class LangZone(object):
         except:
             log.exception("Unable to create/open symbols.db")
             return None
+        cursor = conn.cursor()
         if not exists:
+            cursor.execute("""
+                CREATE TABLE symbols ('symbol_id' INTEGER PRIMARY KEY,
+                                      'symbol' TEXT NOT NULL,
+                                      'type' TEXT NOT NULL,
+                                      'filepath' TEXT NOT NULL,
+                                      'lineno' INTEGER NOT NULL,
+                                      'lang' TEXT NOT NULL,
+                                      'parent' TEXT)
+            """)
+            cursor.execute("CREATE UNIQUE INDEX 'symbol_id' on symbols (symbol_id ASC)")
             try:
-                with conn:
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        CREATE TABLE symbols ('symbol_id' INTEGER PRIMARY KEY,
-                                            'symbol' TEXT NOT NULL,
-                                            'type' TEXT NOT NULL,
-                                            'filepath' TEXT NOT NULL,
-                                            'lineno' INTEGER NOT NULL,
-                                            'lang' TEXT NOT NULL,
-                                            'parent' TEXT)
-                    """)
-                    cursor.execute("CREATE UNIQUE INDEX 'symbol_id' on symbols (symbol_id ASC)")
+                cursor.execute("COMMIT")
             except apsw.SQLError:
                 log.warn("Unable to create symbols.db: possibly exists?")
                 return None
@@ -995,14 +995,9 @@ class LangZone(object):
         """
         if not conn:
             return
-        try:
-            with conn:
-                self._update_symbols_db_transaction(conn, action, blob)
-        except apsw.SQLError:
-            log.error("Unable to save to symbols db.")
-
-    def _update_symbols_db_transaction(self, conn, action, blob):
+        
         cursor = conn.cursor()
+        cursor.execute("BEGIN")
         
         # Delete any symbols in the blob's file.
         if action == "update" or action == "remove":
@@ -1033,6 +1028,11 @@ class LangZone(object):
                     insert_all(n, valid and elem)
             
             insert_all(blob)
+        
+        try:
+            cursor.execute("commit")
+        except apsw.SQLError:
+            log.error("Unable to save to symbols db.")
 
     def _close_symbols_db_conn(self, conn):
         """

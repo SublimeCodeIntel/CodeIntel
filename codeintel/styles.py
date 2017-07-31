@@ -555,6 +555,7 @@ StateMap = {
 StateMap['JavaScript'] = StateMap['C++'].copy()
 StateMap['Node.js'] = StateMap['JavaScript'].copy()
 StateMap['TypeScript'] = StateMap['JavaScript'].copy()
+StateMap['ES'] = StateMap['JavaScript'].copy()
 StateMap['JSON'] = StateMap['C++'].copy()
 StateMap['Java'] = StateMap['C++'].copy()
 StateMap['C#'] = StateMap['C++'].copy()

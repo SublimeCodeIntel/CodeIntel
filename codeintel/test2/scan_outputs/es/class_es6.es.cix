@@ -1,0 +1,22 @@
+<codeintel version="2.0">
+  <file lang="ES" mtime="1501083967" path="scan_inputs/es/class_es6.es">
+    <scope ilk="blob" lang="ES" name="class_es6" src="scan_inputs/es/class_es6.es">
+      <scope ilk="class" line="1" lineend="7" name="ClassName">
+        <variable attributes="__local__" citdl="String" line="2" name="staticProp" />
+        <scope attributes="__staticmethod__ __local__" ilk="function" line="3" name="staticMethod" signature="staticMethod(y) - staticmethod">
+          <variable attributes="__local__" ilk="argument" line="3" name="y" />
+        </scope>
+        <scope attributes="__ctor__ __local__" ilk="function" line="5" name="constructor" signature="ClassName(x)">
+          <variable attributes="__local__" ilk="argument" line="5" name="x" />
+          <variable attributes="__local__" citdl="ClassName" line="5" name="this" />
+        </scope>
+        <scope attributes="__local__" ilk="function" line="6" name="method" signature="method(z)">
+          <variable attributes="__local__" ilk="argument" line="6" name="z" />
+          <variable attributes="__local__" citdl="ClassName" line="6" name="this" />
+        </scope>
+        <variable attributes="__instancevar__ __local__" citdl="String" line="7" name="prop" />
+      </scope>
+      <variable attributes="__local__" line="9" name="instance" />
+    </scope>
+  </file>
+</codeintel>

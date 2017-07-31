@@ -1,26 +1,26 @@
 #!/usr/bin/env python
 # ***** BEGIN LICENSE BLOCK *****
 # Version: MPL 1.1/GPL 2.0/LGPL 2.1
-# 
+#
 # The contents of this file are subject to the Mozilla Public License
 # Version 1.1 (the "License"); you may not use this file except in
 # compliance with the License. You may obtain a copy of the License at
 # http://www.mozilla.org/MPL/
-# 
+#
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
 # License for the specific language governing rights and limitations
 # under the License.
-# 
+#
 # The Original Code is Komodo code.
-# 
+#
 # The Initial Developer of the Original Code is ActiveState Software Inc.
 # Portions created by ActiveState Software Inc are Copyright (C) 2000-2007
 # ActiveState Software Inc. All Rights Reserved.
-# 
+#
 # Contributor(s):
 #   ActiveState Software Inc
-# 
+#
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
 # the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
@@ -32,16 +32,16 @@
 # and other provisions required by the GPL or the LGPL. If you do not delete
 # the provisions above, a recipient may use your version of this file under
 # the terms of any one of the MPL, the GPL or the LGPL.
-# 
+#
 # ***** END LICENSE BLOCK *****
 
-"""Completion evaluation code for Python"""
+"""Completion evaluation code for ES"""
 
 from __future__ import absolute_import
-from os.path import basename, dirname, join, exists, isdir
+from os.path import dirname, join, exists, isdir, abspath
 import operator
 
-from codeintel2.common import *
+from codeintel2.common import CodeIntelError, TRG_FORM_DEFN
 from codeintel2.tree import TreeEvaluator
 
 base_exception_class_completions = [
@@ -95,7 +95,7 @@ base_exception_class_completions = [
 ]
 
 
-class PythonImportLibGenerator(object):
+class ESImportLibGenerator(object):
     """A lazily loading lib generator.
 
     To be used for Komodo's import lookup handling. This generator will return
@@ -109,9 +109,11 @@ class PythonImportLibGenerator(object):
         self.bufpath = bufpath
         self.libs = libs
         self.index = 0
+
     def __iter__(self):
         self.index = 0
         return self
+
     def __next__(self):
         if self.index < len(self.libs):
             # Return the regular libs.
@@ -121,21 +123,20 @@ class PythonImportLibGenerator(object):
                 self.index += 1
         elif self.index == len(self.libs):
             # Try to find a matching parent directory to use.
-            #print "Lazily loading the parent import libs: %r" % (self.imp_prefix, )
+            # print("Lazily loading the parent import libs: %r" % (self.imp_prefix, ))
             self.index += 1
             lookuppath = dirname(self.bufpath)
             parent_dirs_left = 5
             import_name = self.imp_prefix[0]
-            if "." in import_name:
-                import_name = import_name.split(".", 1)[0]
+            if "/" in import_name:
+                import_name = import_name.split("/", 1)[0]
             while lookuppath and parent_dirs_left > 0:
-                #print '    exists: %r - %r' % (exists(join(lookuppath, import_name, "__init__.py")), join(lookuppath, import_name, "__init__.py"))
+                # print('    exists: %r - %r' % (exists(join(lookuppath, import_name, "__init__.py")), join(lookuppath, import_name, "__init__.py")))
                 parent_dirs_left -= 1
                 if exists(join(lookuppath, import_name, "__init__.py")):
                     # Matching directory - return that as a library.
-                    #print "  adding parent dir lib: %r" % (lookuppath)
-                    return self.mgr.db.get_lang_lib(self.lang, "parentdirlib",
-                                                    [lookuppath])
+                    # print("  adding parent dir lib: %r" % (lookuppath))
+                    return self.mgr.db.get_lang_lib(self.lang, "parentdirlib", [lookuppath])
                 lookuppath = dirname(lookuppath)
             # No match found - we're done.
             raise StopIteration
@@ -144,17 +145,19 @@ class PythonImportLibGenerator(object):
     next = __next__
 
 
-class PythonTreeEvaluator(TreeEvaluator):
+class ESTreeEvaluator(TreeEvaluator):
 
     # Own copy of libs (that shadows the real self.buf.libs) - this is required
     # in order to properly adjust the "reldirlib" libraries as they hit imports
     # from different directories - i.e. to correctly deal with relative imports.
     _libs = None
+
     @property
     def libs(self):
         if self._libs is None:
             self._libs = self.buf.libs
         return self._libs
+
     @libs.setter
     def libs(self, value):
         self._libs = value
@@ -169,7 +172,7 @@ class PythonTreeEvaluator(TreeEvaluator):
         self.info("start scope is %r", start_scoperef)
         if self.trg.type == 'local-symbols':
             return self._available_symbols(start_scoperef, self.expr)
-        #if self.trg.type == 'available-classes':
+        # if self.trg.type == 'available-classes':
         #    return self._available_classes(start_scoperef, self.trg.extra["consumed"])
         hit = self._hit_from_citdl(self.expr, start_scoperef)
         return list(self._members_from_hit(hit))
@@ -179,19 +182,19 @@ class PythonTreeEvaluator(TreeEvaluator):
         start_scoperef = self.get_start_scoperef()
         self.info("start scope is %r", start_scoperef)
         hit = self._hit_from_citdl(self.expr, start_scoperef)
-        return [ self._calltip_from_hit(hit) ]
+        return [self._calltip_from_hit(hit)]
 
     def eval_defns(self):
         self.log_start()
         start_scoperef = self.get_start_scoperef()
         self.info("start scope is %r", start_scoperef)
         hit = self._hit_from_citdl(self.expr, start_scoperef, defn_only=True)
-        return [ self._defn_from_hit(hit) ]
+        return [self._defn_from_hit(hit)]
 
     def _defn_from_hit(self, hit):
         defn = TreeEvaluator._defn_from_hit(self, hit)
         if not defn.path:
-            # Locate the module in the users own Python stdlib,
+            # Locate the module in the users own ES stdlib,
             # bug 65296.
             langintel = self.buf.langintel
             info = langintel.python_info_from_env(self.buf.env)
@@ -205,7 +208,7 @@ class PythonTreeEvaluator(TreeEvaluator):
                     defn.path = join(path, "__init__.py")
         return defn
 
-    #def _available_classes(self, scoperef, consumed):
+    # def _available_classes(self, scoperef, consumed):
     #    matches = set()
     #    blob = scoperef[0] # XXX??
     #    for elem in blob:
@@ -214,7 +217,7 @@ class PythonTreeEvaluator(TreeEvaluator):
     #    matches.difference_update(set(consumed))
     #    matches_list = sorted(list(matches))
     #    return [('class', m) for m in matches_list]
-    
+
     def _available_symbols(self, scoperef, expr):
         cplns = []
         found_names = set()
@@ -242,7 +245,7 @@ class PythonTreeEvaluator(TreeEvaluator):
         for keyword in self.buf.langintel.keywords:
             # Don't remove short keywords, as that has a conflict with fill-up
             # characters, see bug 100471.
-            #if len(keyword) < 3 or not keyword.startswith(expr):
+            # if len(keyword) < 3 or not keyword.startswith(expr):
             if not keyword.startswith(expr):
                 continue
             # Always add None and lambda, otherwise only at the start of lines.
@@ -258,6 +261,7 @@ class PythonTreeEvaluator(TreeEvaluator):
                 yield '()'
             else:
                 yield token
+
     def _join_citdl_expr(self, tokens):
         return '.'.join(tokens)
 
@@ -287,12 +291,11 @@ class PythonTreeEvaluator(TreeEvaluator):
             return '\n'.join(ctlines)
         else:
             ctor_hit = self._ctor_hit_from_class(elem, scoperef)
-            if ctor_hit and (ctor_hit[0].get("doc")
-                             or ctor_hit[0].get("signature")):
+            if ctor_hit and (ctor_hit[0].get("doc") or ctor_hit[0].get("signature")):
                 self.log("ctor is %r on %r", *ctor_hit)
                 return self._calltip_from_func(ctor_hit[0], ctor_hit[1],
                                                class_name=elem.get("name"))
-                
+
             else:
                 doc = elem.get("doc")
                 if doc:
@@ -302,10 +305,10 @@ class PythonTreeEvaluator(TreeEvaluator):
                 return '\n'.join(ctlines)
 
     def _ctor_hit_from_class(self, elem, scoperef):
-        """Return the Python ctor for the given class element, or None."""
-        if "__init__" in elem.names:
-            class_scoperef = (scoperef[0], scoperef[1]+[elem.get("name")])
-            return elem.names["__init__"], class_scoperef
+        """Return the ES ctor for the given class element, or None."""
+        if "constructor" in elem.names:
+            class_scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
+            return elem.names["constructor"], class_scoperef
         else:
             for classref in elem.get("classrefs", "").split():
                 try:
@@ -349,30 +352,28 @@ class PythonTreeEvaluator(TreeEvaluator):
             module_name = elem.get("module")
             if symbol_name:
                 import_handler = self.citadel.import_handler_from_lang(self.trg.lang)
-                blob = import_handler.import_blob_name(
-                            module_name, self.libs, self.ctlr)
+                blob = import_handler.import_blob_name(module_name, self.libs, self.ctlr)
                 if symbol_name == "*":
                     for m_name, m_elem in blob.names.items():
                         m_type = m_elem.get("ilk") or m_elem.tag
-                        members.add( (m_type, m_name) )
+                        members.add((m_type, m_name))
                 elif symbol_name in blob.names:
                     symbol = blob.names[symbol_name]
                     member_type = (symbol.get("ilk") or symbol.tag)
-                    members.add( (member_type, alias or symbol_name) )
+                    members.add((member_type, alias or symbol_name))
                 else:
-                    hit, nconsumed \
-                        = self._hit_from_elem_imports([symbol_name], blob)
+                    hit, nconsumed = self._hit_from_elem_imports([symbol_name], blob)
                     if hit:
                         symbol = hit[0]
                         member_type = (symbol.get("ilk") or symbol.tag)
-                        members.add( (member_type, alias or symbol_name) )
+                        members.add((member_type, alias or symbol_name))
                     else:
                         self.warn("could not resolve %r", elem)
             else:
-                cpln_name = alias or module_name.split('.', 1)[0]
-                members.add( ("module", cpln_name) )
+                cpln_name = alias or module_name.split("/", 1)[0]
+                members.add(("module", cpln_name))
         else:
-            members.add( (elem.get("ilk") or elem.tag, elem.get("name")) )
+            members.add((elem.get("ilk") or elem.tag, elem.get("name")))
         return members
 
     def _members_from_hit(self, hit):
@@ -384,6 +385,7 @@ class PythonTreeEvaluator(TreeEvaluator):
                     members.update(self._members_from_elem(child))
                 except CodeIntelError as ex:
                     self.warn("%s (skipping members for %s)", ex, child)
+
         if elem.get("ilk") == "class":
             for classref in elem.get("classrefs", "").split():
                 try:
@@ -395,8 +397,27 @@ class PythonTreeEvaluator(TreeEvaluator):
                     members.update(self._members_from_hit(subhit))
             # Add special __class__ attribute.
             members.add(("variable", "__class__"))
-        # Add special __doc__ attribute.
-        members.add(("variable", "__doc__"))
+
+        elif elem.get("ilk") == "object":
+            for objectref in elem.get("objectrefs", "").split():
+                try:
+                    subhit = self._hit_from_type_inference(objectref, scoperef)
+                except CodeIntelError as ex:
+                    # Continue with what we *can* resolve.
+                    self.warn(str(ex))
+                else:
+                    members.update(self._members_from_hit(subhit))
+
+        elif elem.get("ilk") == "interface":
+            for interfaceref in elem.get("interfacerefs", "").split():
+                try:
+                    subhit = self._hit_from_type_inference(interfaceref, scoperef)
+                except CodeIntelError as ex:
+                    # Continue with what we *can* resolve.
+                    self.warn(str(ex))
+                else:
+                    members.update(self._members_from_hit(subhit))
+
         return members
 
     def _hit_from_citdl(self, expr, scoperef, defn_only=False):
@@ -405,34 +426,31 @@ class PythonTreeEvaluator(TreeEvaluator):
         """
         self._check_infinite_recursion(expr)
         tokens = list(self._tokenize_citdl_expr(expr))
-        #self.log("expr tokens: %r", tokens)
+        # self.log("expr tokens: %r", tokens)
 
         # First part...
         hit, nconsumed = self._hit_from_first_part(tokens, scoperef)
         if not hit:
-            #TODO: Add the fallback Buffer-specific near-by hunt
+            # TODO: Add the fallback Buffer-specific near-by hunt
             #      for a symbol for the first token. See my spiral-bound
             #      book for some notes.
             raise CodeIntelError("could not resolve first part of '%s'" % expr)
-        self.debug("_hit_from_citdl: first part: %r -> %r",
-                   tokens[:nconsumed], hit)
+        self.debug("_hit_from_citdl: first part: %r -> %r", tokens[:nconsumed], hit)
 
         # ...the remainder.
         remaining_tokens = tokens[nconsumed:]
         while remaining_tokens:
-            self.debug("_hit_from_citdl: resolve %r on %r in %r",
-                       remaining_tokens, *hit)
+            self.debug("_hit_from_citdl: resolve %r on %r in %r", remaining_tokens, *hit)
             if remaining_tokens[0] == "()":
                 new_hit = self._hit_from_call(*hit)
                 nconsumed = 1
             else:
-                new_hit, nconsumed \
-                    = self._hit_from_getattr(remaining_tokens, *hit)
+                new_hit, nconsumed = self._hit_from_getattr(remaining_tokens, *hit)
             remaining_tokens = remaining_tokens[nconsumed:]
             hit = new_hit
 
         # Resolve any variable type inferences.
-        #TODO: Need to *recursively* resolve hits.
+        # TODO: Need to *recursively* resolve hits.
         elem, scoperef = hit
         if elem.tag == "variable" and not defn_only:
             elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef)
@@ -454,9 +472,10 @@ class PythonTreeEvaluator(TreeEvaluator):
             retval: ((<import os.path>,  (<blob 'os', [])),   2)
         """
         first_token = tokens[0]
+
         self.log("find '%s ...' starting at %s:", first_token, scoperef)
 
-        # pythoncile will sometimes give a citdl expression of "__builtins__",
+        # escile will sometimes give a citdl expression of "__builtins__",
         # check for this now, bug:
         #   http://bugs.activestate.com/show_bug.cgi?id=71972
         if first_token == "__builtins__":
@@ -464,19 +483,18 @@ class PythonTreeEvaluator(TreeEvaluator):
             scoperef = (self.built_in_blob, [])
             return (self.built_in_blob, scoperef), 1
 
-        while 1:
+        while True:
             elem = self._elem_from_scoperef(scoperef)
             if first_token in elem.names:
-                #TODO: skip __hidden__ names
+                # TODO: skip __hidden__ names
                 self.log("is '%s' accessible on %s? yes: %s",
                          first_token, scoperef, elem.names[first_token])
                 return (elem.names[first_token], scoperef), 1
 
-            hit, nconsumed \
-                = self._hit_from_elem_imports(tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
             if hit is not None:
                 self.log("is '%s' accessible on %s? yes: %s",
-                         '.'.join(tokens[:nconsumed]), scoperef, hit[0])
+                         ".".join(tokens[:nconsumed]), scoperef, hit[0])
                 return hit, nconsumed
 
             if first_token == elem.get("name"):
@@ -500,7 +518,7 @@ class PythonTreeEvaluator(TreeEvaluator):
             reldirpath = dirname(blob_src)
             reldirlib = self.mgr.db.get_lang_lib(self.trg.lang, "reldirlib",
                                                  [reldirpath])
-            newlibs = self.libs[:] # Make a copy of the libs.
+            newlibs = self.libs[:]  # Make a copy of the libs.
             if newlibs[0].name == "reldirlib":
                 # Update the existing reldirlib location.
                 newlibs[0] = reldirlib
@@ -512,11 +530,10 @@ class PythonTreeEvaluator(TreeEvaluator):
 
     def _add_parentdirlib(self, libs, tokens):
         """Add a lazily loaded parent directory import library."""
-        if isinstance(libs, PythonImportLibGenerator):
+        if isinstance(libs, ESImportLibGenerator):
             # Reset to the original libs.
             libs = libs.libs
-        libs = PythonImportLibGenerator(self.mgr, self.trg.lang, self.buf.path,
-                                        tokens, libs)
+        libs = ESImportLibGenerator(self.mgr, self.trg.lang, self.buf.path, tokens, libs)
         return libs
 
     def __hit_from_elem_imports(self, tokens, elem):
@@ -526,12 +543,12 @@ class PythonTreeEvaluator(TreeEvaluator):
         XXX import_handler.import_blob_name() calls all have potential
             to raise CodeIntelError.
         """
-        #PERF: just have a .import_handler property on the evalr?
+        # PERF: just have a .import_handler property on the evalr?
         import_handler = self.citadel.import_handler_from_lang(self.trg.lang)
 
-        #PERF: Add .imports method to ciElementTree for quick iteration
+        # PERF: Add .imports method to ciElementTree for quick iteration
         #      over them. Or perhaps some cache to speed this method.
-        #TODO: The right answer here is to not resolve the <import>,
+        # TODO: The right answer here is to not resolve the <import>,
         #      just return it. It is complicated enough that the
         #      construction of members has to know the original context.
         #      See the "Foo.mypackage.<|>mymodule.yo" part of test
@@ -543,7 +560,7 @@ class PythonTreeEvaluator(TreeEvaluator):
         self._check_infinite_recursion(first_token)
         orig_libs = self.libs
         for imp_elem in (i for i in elem if i.tag == "import"):
-            libs = orig_libs # reset libs back to the original
+            libs = orig_libs  # reset libs back to the original
             self.debug("'%s ...' from %r?", tokens[0], imp_elem)
             alias = imp_elem.get("alias")
             symbol_name = imp_elem.get("symbol")
@@ -555,14 +572,12 @@ class PythonTreeEvaluator(TreeEvaluator):
                 # Need a different curdirlib.
                 if libs[0].name == "reldirlib":
                     lookuppath = libs[0].dirs[0]
-                    module_name = module_name[1:]
                 else:
-                    lookuppath = self.buf.path
-                while module_name.startswith("."):
-                    lookuppath = dirname(lookuppath)
-                    module_name = module_name[1:]
-                libs = [self.mgr.db.get_lang_lib(self.trg.lang, "curdirlib",
-                                                 [lookuppath])]
+                    lookuppath = dirname(self.buf.path)
+                _module_name = module_name.lstrip("./")
+                lookuppath = abspath(join(lookuppath, module_name[:-len(_module_name)]))
+                module_name = _module_name
+                libs = [self.mgr.db.get_lang_lib(self.trg.lang, "curdirlib", [lookuppath])]
                 if not module_name:
                     module_name = symbol_name
                     symbol_name = None
@@ -570,103 +585,84 @@ class PythonTreeEvaluator(TreeEvaluator):
             if symbol_name:
                 # from module import symbol, from module import symbol as alias
                 # from module import submod, from module import submod as alias
-                if (alias and alias == first_token) \
-                   or (not alias and symbol_name == first_token):
+                if (alias and alias == first_token) or (not alias and symbol_name == first_token):
                     # Try 'from module import symbol/from module import
                     # symbol as alias' first.
                     if allow_parentdirlib:
-                        libs = self._add_parentdirlib(libs, module_name.split("."))
+                        libs = self._add_parentdirlib(libs, module_name.split("/"))
                     try:
-                        blob = import_handler.import_blob_name(
-                                    module_name, libs, self.ctlr)
+                        blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
                         if symbol_name in blob.names:
-                            return (blob.names[symbol_name], (blob, [])),  1
+                            return (blob.names[symbol_name], (blob, [])), 1
                         else:
                             self._set_reldirlib_from_blob(blob)
-                            hit, nconsumed = self._hit_from_elem_imports(
-                                [first_token] + tokens[1:], blob)
-                            if hit: 
+                            hit, nconsumed = self._hit_from_elem_imports([first_token] + tokens[1:], blob)
+                            if hit:
                                 return hit, nconsumed
                     except CodeIntelError:
-                        pass
-
-                    # That didn't work, try 'from module import
-                    # submod/from module import submod as alias'.
-                    submodule_name = import_handler.sep.join(
-                                        [module_name, symbol_name])
-                    if allow_parentdirlib:
-                        libs = self._add_parentdirlib(libs, submodule_name.split("."))
-                    try:
-                        subblob = import_handler.import_blob_name(
-                                    submodule_name, libs, self.ctlr)
-                        return (subblob, (subblob, [])), 1
-                    except CodeIntelError:
                         # That didn't work either. Give up.
-                        self.warn("could not import '%s' from %s",
-                                  first_token, imp_elem)
+                        self.warn("could not import '%s' from %s", first_token, imp_elem)
 
                 # from module import *
                 elif symbol_name == "*":
                     try:
                         if allow_parentdirlib:
-                            libs = self._add_parentdirlib(libs, module_name.split("."))
-                        blob = import_handler.import_blob_name(
-                                    module_name, libs, self.ctlr)
+                            libs = self._add_parentdirlib(libs, module_name.split("/"))
+                        blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
                     except CodeIntelError:
-                        pass # don't freak out: might not be our import anyway
+                        pass  # don't freak out: might not be our import anyway
                     else:
                         self._set_reldirlib_from_blob(blob)
                         try:
-                            hit, nconsumed = self._hit_from_getattr(
-                                                tokens, blob, (blob, []))
+                            hit, nconsumed = self._hit_from_getattr(tokens, blob, (blob, []))
                         except CodeIntelError:
                             pass
                         else:
                             if hit:
                                 return hit, nconsumed
 
-            elif (alias and alias == first_token) \
-                 or ((not alias or self.trg.form == TRG_FORM_DEFN) and module_name == first_token):
+            elif (alias and alias == first_token) or (
+                (not alias or self.trg.form == TRG_FORM_DEFN) and
+                module_name == first_token
+            ):
                 if allow_parentdirlib:
-                    libs = self._add_parentdirlib(libs, module_name.split("."))
-                blob = import_handler.import_blob_name(
-                            module_name, libs, self.ctlr)
-                return (blob, (blob, [])),  1
+                    libs = self._add_parentdirlib(libs, module_name.split("/"))
+                blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
+                if "exports" in blob.names and "default" in blob.names["exports"]:
+                    return (blob.names["exports"]["default"], (blob, [])), 1
+                return (blob, (blob, [])), 1
 
-            elif '.' in module_name:
+            elif "/" in module_name:
                 # E.g., might be looking up ('os', 'path', ...) and
                 # have <import os.path>.
-                module_tokens = module_name.split('.')
+                module_tokens = module_name.split("/")
                 if allow_parentdirlib:
                     libs = self._add_parentdirlib(libs, module_tokens)
                 if module_tokens == tokens[:len(module_tokens)]:
                     # E.g. tokens:   ('os', 'path', ...)
                     #      imp_elem: <import os.path>
                     #      return:   <blob 'os.path'> for first two tokens
-                    blob = import_handler.import_blob_name(
-                                module_name, libs, self.ctlr)
-                    #XXX Is this correct scoperef for module object?
-                    return (blob, (blob, [])),  len(module_tokens)
+                    blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
+                    # XXX Is this correct scoperef for module object?
+                    return (blob, (blob, [])), len(module_tokens)
                 elif module_tokens[0] == tokens[0]:
                     # To check later if there are no exact import matches.
                     possible_submodule_tokens.append(module_tokens)
 
         # No matches, check if there is a partial import match.
         if possible_submodule_tokens:
-            libs = orig_libs # reset libs back to the original
+            libs = orig_libs  # reset libs back to the original
             if allow_parentdirlib:
                 libs = self._add_parentdirlib(libs, module_tokens)
             # E.g. tokens:   ('os', 'sep', ...)
             #      imp_elem: <import os.path>
             #      return:   <blob 'os'> for first token
-            for i in range(len(module_tokens)-1, 0, -1):
+            for i in range(len(module_tokens) - 1, 0, -1):
                 for module_tokens in possible_submodule_tokens:
                     if module_tokens[:i] == tokens[:i]:
-                        blob = import_handler.import_blob_name(
-                                    '.'.join(module_tokens[:i]),
-                                    libs, self.ctlr)
-                        #XXX Is this correct scoperef for module object?
-                        return (blob, (blob, [])),  i
+                        blob = import_handler.import_blob_name("/".join(module_tokens[:i]), libs, self.ctlr)
+                        # XXX Is this correct scoperef for module object?
+                        return (blob, (blob, [])), i
 
         return None, None
 
@@ -699,10 +695,9 @@ class PythonTreeEvaluator(TreeEvaluator):
         if ilk == "function":
             citdl = elem.get("returns")
             if citdl:
-                self.log("_hit_from_call: function with citdl %r",
-                         citdl)
+                self.log("_hit_from_call: function with citdl %r", citdl)
                 # scoperef has to be set to the function called
-                func_scoperef = (scoperef[0], scoperef[1]+[elem.get("name")])
+                func_scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
                 return self._hit_from_citdl(citdl, func_scoperef)
         raise CodeIntelError("no return type info for %r" % elem)
 
@@ -715,13 +710,18 @@ class PythonTreeEvaluator(TreeEvaluator):
         some multi-level imports can result in multiple tokens being
         consumed.
         """
-        #TODO: On failure, call a hook to make an educated guess. Some
+        # TODO: On failure, call a hook to make an educated guess. Some
         #      attribute names are strong signals as to the object type
         #      -- typically those for common built-in classes.
         first_token = tokens[0]
-        self.log("resolve getattr '%s' on %r in %r:", first_token,
-                 elem, scoperef)
+        self.log("resolve getattr '%s' on %r in %r:", first_token, elem, scoperef)
         if elem.tag == "variable":
+            field = elem.names.get(first_token)
+            if field is not None:
+                self.log("field is %r in %r", field, elem)
+                # update the scoperef, we are now inside the class.
+                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
+                return (field, scoperef), 1
             elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef)
 
         assert elem.tag == "scope"
@@ -730,11 +730,12 @@ class PythonTreeEvaluator(TreeEvaluator):
             attr = elem.names.get(first_token)
             if attr is not None:
                 ilk = elem.get("ilk")
-                if ilk in ("class", "function"):
+                if ilk in ("class", "object", "interface", "function"):
                     return (attr, scoperef), 1
             # Internal function arguments and variable should
             # *not* resolve. And we don't support function
             # attributes.
+
         elif ilk == "class":
             attr = elem.names.get(first_token)
             if attr is not None:
@@ -750,8 +751,7 @@ class PythonTreeEvaluator(TreeEvaluator):
                 return (elem, scoperef), 1
 
             self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed \
-                = self._hit_from_elem_imports(tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
             if hit is not None:
                 return hit, nconsumed
 
@@ -759,22 +759,71 @@ class PythonTreeEvaluator(TreeEvaluator):
                 try:
                     self.log("is '%s' from base class: %r?", first_token,
                              classref)
-                    base_elem, base_scoperef \
-                        = self._hit_from_type_inference(classref, scoperef)
+                    base_elem, base_scoperef = self._hit_from_type_inference(classref, scoperef)
                     return self._hit_from_getattr(tokens, base_elem,
                                                   base_scoperef)
                 except CodeIntelError as ex:
                     self.log("could not resolve classref '%s' on scoperef %r",
                              classref, scoperef, )
                     # Was not available, try the next class then.
+
+        elif ilk == "object":
+            attr = elem.names.get(first_token)
+            if attr is not None:
+                self.log("attr is %r in %r", attr, elem)
+                # update the scoperef, we are now inside the object.
+                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
+                return (attr, scoperef), 1
+
+            self.debug("look for %r from imports in %r", tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
+            if hit is not None:
+                return hit, nconsumed
+
+            for objectref in elem.get("objectrefs", "").split():
+                try:
+                    self.log("is '%s' from base object: %r?", first_token,
+                             objectref)
+                    base_elem, base_scoperef = self._hit_from_type_inference(objectref, scoperef)
+                    return self._hit_from_getattr(tokens, base_elem,
+                                                  base_scoperef)
+                except CodeIntelError as ex:
+                    self.log("could not resolve objectref '%s' on scoperef %r",
+                             objectref, scoperef, )
+                    # Was not available, try the next object then.
+
+        elif ilk == "interface":
+            attr = elem.names.get(first_token)
+            if attr is not None:
+                self.log("attr is %r in %r", attr, elem)
+                # update the scoperef, we are now inside the interface.
+                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
+                return (attr, scoperef), 1
+
+            self.debug("look for %r from imports in %r", tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
+            if hit is not None:
+                return hit, nconsumed
+
+            for interfaceref in elem.get("interfacerefs", "").split():
+                try:
+                    self.log("is '%s' from base interface: %r?", first_token,
+                             interfaceref)
+                    base_elem, base_scoperef = self._hit_from_type_inference(interfaceref, scoperef)
+                    return self._hit_from_getattr(tokens, base_elem,
+                                                  base_scoperef)
+                except CodeIntelError as ex:
+                    self.log("could not resolve interfaceref '%s' on scoperef %r",
+                             interfaceref, scoperef, )
+                    # Was not available, try the next interface then.
+
         elif ilk == "blob":
             attr = elem.names.get(first_token)
             if attr is not None:
                 self.log("attr is %r in %r", attr, elem)
                 return (attr, scoperef), 1
 
-            hit, nconsumed \
-                = self._hit_from_elem_imports(tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
             if hit is not None:
                 return hit, nconsumed
         else:
@@ -798,10 +847,11 @@ class PythonTreeEvaluator(TreeEvaluator):
 
     @property
     def stdlib(self):
-        #XXX Presume last lib is stdlib.
+        # XXX Presume last lib is stdlib.
         return self.buf.libs[-1]
 
     _built_in_blob = None
+
     @property
     def built_in_blob(self):
         if self._built_in_blob is None:
@@ -815,7 +865,7 @@ class PythonTreeEvaluator(TreeEvaluator):
             if parent_lpath:
                 elem = self._elem_from_scoperef((blob, parent_lpath))
                 if elem.get("ilk") == "class":
-                    # Python eval shouldn't consider the class-level
+                    # ES eval shouldn't consider the class-level
                     # scope as a parent scope when resolving from the
                     # top-level. (test python/cpln/skip_class_scope)
                     parent_lpath = parent_lpath[:-1]
@@ -833,4 +883,3 @@ class PythonTreeEvaluator(TreeEvaluator):
         for lname in scoperef[1]:
             elem = elem.names[lname]
         return elem
-

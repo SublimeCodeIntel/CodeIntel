@@ -206,7 +206,6 @@ ciElementTree_ext = Extension(
 
 install_requires = [
     '3to2',
-    'apsw',
     'applib',
     'chardet',
     'cmdln',
@@ -284,8 +283,6 @@ TemplateToolkit, PHP, C/C++, Objective-C.""",
     entry_points={
         'console_scripts': [
             'codeintel = codeintel.__main__:main',
-            'ci2 = codeintel.ci2:main',
-            'cipref = codeintel.cipref:main',
         ],
     },
     packages=[

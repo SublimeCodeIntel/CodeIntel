@@ -334,10 +334,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         return self.string_type_map[type(obj)]
 
     def string_repr(self, obj):
-        r = repr(obj)
-        if r[0] in 'bu':
-            r = r[1:]
-        return self.string_prefix_map[type(obj)] + r
+        return self.string_prefix_map[type(obj)] + repr(obj).lstrip('bur')
 
     def parse(self, **kwargs):
         """Parse text into a tree and walk the result"""
@@ -1476,7 +1473,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
         s = None
         if isinstance(node, ast.Name):
             s = node.id
-        if isinstance(node, ast_NameConstant):
+        elif isinstance(node, ast_NameConstant):
             s = repr(node.value)
         elif isinstance(node, ast.Num):
             s = repr(node.n)
@@ -1982,7 +1979,7 @@ def main(argv):
             if _gClockIt:
                 sys.stdout.write(" %.3fs\n" % (_gClock()-_gStartTime))
             elif data:
-                sys.stdout.buffer.write(data)
+                sys.stdout.write(data)
     except PythonCILEError as ex:
         log.error(str(ex))
         if log.isEnabledFor(logging.DEBUG):
