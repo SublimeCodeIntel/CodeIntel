@@ -95,6 +95,30 @@ base_exception_class_completions = [
 ]
 
 
+class ClassInstance():
+    def __init__(self, elem):
+        self.elem = elem
+
+    @property
+    def tag(self):
+        return self.elem.tag
+
+    @property
+    def names(self):
+        return self.elem.names
+
+    def get(self, name, default=None):
+        if name == "ilk":
+            return "instance"
+        return self.elem.get(name, default)
+
+    def __iter__(self):
+        return iter(self.elem)
+
+    def __repr__(self):
+        return "<instance" + repr(self.elem)[6:]
+
+
 class PythonImportLibGenerator(object):
     """A lazily loading lib generator.
 
@@ -327,7 +351,7 @@ class PythonTreeEvaluator(TreeEvaluator):
             ilk = elem.get("ilk")
             if ilk == "function":
                 calltip = self._calltip_from_func(elem, scoperef)
-            elif ilk == "class":
+            elif ilk in ("class", "instance"):
                 calltip = self._calltip_from_class(elem, scoperef)
             else:
                 raise NotImplementedError("unexpected scope ilk for "
@@ -375,16 +399,30 @@ class PythonTreeEvaluator(TreeEvaluator):
             members.add( (elem.get("ilk") or elem.tag, elem.get("name")) )
         return members
 
-    def _members_from_hit(self, hit):
+    def _members_from_hit(self, hit, hidden=None):
         elem, scoperef = hit
+        ilk = elem.get("ilk")
+        if ilk == "class":
+            if hidden is None:
+                hidden = ["__hidden__", "__instancevar__"]
+        elif ilk == "instance":
+            if hidden is None:
+                hidden = ["__hidden__"]
+        else:
+            if hidden is None:
+                hidden = ["__hidden__"]
         members = set()
         for child in elem:
-            if "__hidden__" not in child.get("attributes", "").split():
+            attributes = child.get("attributes", "").split()
+            for attr in hidden:
+                if attr in attributes:
+                    break
+            else:
                 try:
                     members.update(self._members_from_elem(child))
                 except CodeIntelError as ex:
                     self.warn("%s (skipping members for %s)", ex, child)
-        if elem.get("ilk") == "class":
+        if ilk in ("class", "instance"):
             for classref in elem.get("classrefs", "").split():
                 try:
                     subhit = self._hit_from_type_inference(classref, scoperef)
@@ -392,7 +430,7 @@ class PythonTreeEvaluator(TreeEvaluator):
                     # Continue with what we *can* resolve.
                     self.warn(str(ex))
                 else:
-                    members.update(self._members_from_hit(subhit))
+                    members.update(self._members_from_hit(subhit, hidden=hidden))
             # Add special __class__ attribute.
             members.add(("variable", "__class__"))
         # Add special __doc__ attribute.
@@ -694,8 +732,8 @@ class PythonTreeEvaluator(TreeEvaluator):
         ilk = elem.get("ilk")
         if ilk == "class":
             # Return the class element.
-            self.log("_hit_from_call: resolved to class '%s'", elem.get("name"))
-            return (elem, scoperef)
+            self.log("_hit_from_call: resolved to class instance '%s'", elem.get("name"))
+            return (ClassInstance(elem), scoperef)
         if ilk == "function":
             citdl = elem.get("returns")
             if citdl:
@@ -730,12 +768,12 @@ class PythonTreeEvaluator(TreeEvaluator):
             attr = elem.names.get(first_token)
             if attr is not None:
                 ilk = elem.get("ilk")
-                if ilk in ("class", "function"):
+                if ilk in ("class", "instance", "function"):
                     return (attr, scoperef), 1
             # Internal function arguments and variable should
             # *not* resolve. And we don't support function
             # attributes.
-        elif ilk == "class":
+        elif ilk in ("class", "instance"):
             attr = elem.names.get(first_token)
             if attr is not None:
                 self.log("attr is %r in %r", attr, elem)
@@ -814,7 +852,7 @@ class PythonTreeEvaluator(TreeEvaluator):
             parent_lpath = lpath[:-1]
             if parent_lpath:
                 elem = self._elem_from_scoperef((blob, parent_lpath))
-                if elem.get("ilk") == "class":
+                if elem.get("ilk") in ("class", "instance"):
                     # Python eval shouldn't consider the class-level
                     # scope as a parent scope when resolving from the
                     # top-level. (test python/cpln/skip_class_scope)

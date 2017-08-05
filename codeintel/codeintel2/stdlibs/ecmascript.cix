@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <codeintel version="2.0">
-  <file lang="ES" mtime="1331923921" path="node_globals.cix">
-    <scope doc="These object are available in all modules. Some of these objects aren't actually in the global scope but in the module scope - this will be noted." ilk="blob" lang="ES" name="*">
+  <file lang="ECMAScript" mtime="1331923921" path="node_globals.cix">
+    <scope doc="These object are available in all modules. Some of these objects aren't actually in the global scope but in the module scope - this will be noted." ilk="blob" lang="ECMAScript" name="*">
       <variable citdl="require()" doc="Used to print to stdout and stderr. See the stdio section." name="console" required_library_name="console"/>
       <variable citdl="require()" doc="The process object. See the process object section." name="process" required_library_name="process"/>
       <scope doc="To require modules. See the Modules section. require isn't actually a global but rather local to each module." ilk="function" name="require" signature="require(str)">

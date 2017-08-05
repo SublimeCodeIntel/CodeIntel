@@ -35,67 +35,67 @@
 #
 # ***** END LICENSE BLOCK *****
 
-"""Completion evaluation code for ES"""
+"""Completion evaluation code for ECMAScript"""
 
 from __future__ import absolute_import
 from os.path import dirname, join, exists, isdir, abspath
 import operator
 
-from codeintel2.common import CodeIntelError, TRG_FORM_DEFN
+from codeintel2.common import CodeIntelError
 from codeintel2.tree import TreeEvaluator
 
 base_exception_class_completions = [
-    ("class", "BaseException"),
-    ("class", "Exception"),
-    ("class", "StandardError"),
-    ("class", "ArithmeticError"),
-    ("class", "LookupError"),
-    ("class", "EnvironmentError"),
-    ("class", "AssertionError"),
-    ("class", "AttributeError"),
-    ("class", "EOFError"),
-    ("class", "FloatingPointError"),
-    ("class", "GeneratorExit"),
-    ("class", "IOError"),
-    ("class", "ImportError"),
-    ("class", "IndexError"),
-    ("class", "KeyError"),
-    ("class", "KeyboardInterrupt"),
-    ("class", "MemoryError"),
-    ("class", "NameError"),
-    ("class", "NotImplementedError"),
-    ("class", "OSError"),
-    ("class", "OverflowError"),
-    ("class", "ReferenceError"),
-    ("class", "RuntimeError"),
-    ("class", "StopIteration"),
-    ("class", "SyntaxError"),
-    ("class", "SystemError"),
-    ("class", "SystemExit"),
-    ("class", "TypeError"),
-    ("class", "UnboundLocalError"),
-    ("class", "UnicodeError"),
-    ("class", "UnicodeEncodeError"),
-    ("class", "UnicodeDecodeError"),
-    ("class", "UnicodeTranslateError"),
-    ("class", "ValueError"),
-    ("class", "VMSError"),
-    ("class", "WindowsError"),
-    ("class", "ZeroDivisionError"),
-    # Warning category exceptions.
-    ("class", "Warning"),
-    ("class", "UserWarning"),
-    ("class", "DeprecationWarning"),
-    ("class", "PendingDeprecationWarning"),
-    ("class", "SyntaxWarning"),
-    ("class", "RuntimeWarning"),
-    ("class", "FutureWarning"),
-    ("class", "ImportWarning"),
-    ("class", "UnicodeWarning"),
+    "Exception",
 ]
 
 
-class ESImportLibGenerator(object):
+class ClassInstance:
+    def __init__(self, elem):
+        self.elem = elem
+
+    @property
+    def tag(self):
+        return self.elem.tag
+
+    @property
+    def names(self):
+        return self.elem.names
+
+    def get(self, name, default=None):
+        if name == "ilk":
+            return "instance"
+        return self.elem.get(name, default)
+
+    def __iter__(self):
+        return iter(self.elem)
+
+    def __repr__(self):
+        return "<instance" + repr(self.elem)[6:]
+
+
+class FakeImport:
+    def __init__(self, elem, tag="import", **attributes):
+        self._elem = elem
+        self._tag = tag
+        self._attributes = attributes
+
+    @property
+    def tag(self):
+        return self._tag
+
+    def get(self, name, default=None):
+        if name in self._attributes:
+            return self._attributes[name]
+        return self._elem.get(name, default)
+
+    def __iter__(self):
+        return iter([self])
+
+    def __repr__(self):
+        return repr(self._elem)
+
+
+class ECMAScriptImportLibGenerator(object):
     """A lazily loading lib generator.
 
     To be used for Komodo's import lookup handling. This generator will return
@@ -145,12 +145,13 @@ class ESImportLibGenerator(object):
     next = __next__
 
 
-class ESTreeEvaluator(TreeEvaluator):
+class ECMAScriptTreeEvaluator(TreeEvaluator):
 
     # Own copy of libs (that shadows the real self.buf.libs) - this is required
     # in order to properly adjust the "reldirlib" libraries as they hit imports
     # from different directories - i.e. to correctly deal with relative imports.
     _libs = None
+    _SENTINEL_MAX_EXPR_COUNT = 100
 
     @property
     def libs(self):
@@ -174,6 +175,8 @@ class ESTreeEvaluator(TreeEvaluator):
             return self._available_symbols(start_scoperef, self.expr)
         # if self.trg.type == 'available-classes':
         #    return self._available_classes(start_scoperef, self.trg.extra["consumed"])
+        if self.trg.type == "object-properties":
+            return self._available_properties(start_scoperef, self.expr)
         hit = self._hit_from_citdl(self.expr, start_scoperef)
         return list(self._members_from_hit(hit))
 
@@ -194,10 +197,10 @@ class ESTreeEvaluator(TreeEvaluator):
     def _defn_from_hit(self, hit):
         defn = TreeEvaluator._defn_from_hit(self, hit)
         if not defn.path:
-            # Locate the module in the users own ES stdlib,
+            # Locate the module in the users own ECMAScript stdlib,
             # bug 65296.
             langintel = self.buf.langintel
-            info = langintel.python_info_from_env(self.buf.env)
+            info = langintel.ecmascript_info_from_env(self.buf.env)
             ver, prefix, libdir, sitelibdir, sys_path = info
             if libdir:
                 elem, (blob, lpath) = hit
@@ -254,6 +257,27 @@ class ESTreeEvaluator(TreeEvaluator):
 
         return sorted(cplns, key=operator.itemgetter(1))
 
+    def _available_properties(self, scoperef, expr):
+        while scoperef:
+            elem = self._elem_from_scoperef(scoperef)
+            attributes = elem.get("attributes", "").split()
+            if "__jsx__" in attributes:
+                break
+            scoperef = self.parent_scoperef_from_scoperef(scoperef)
+        if elem is not None:
+            if "props" in elem.names:
+                props = set(elem.names["props"].names)
+            else:
+                props = set()
+            elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef)
+            hit, nconsumed = self._hit_from_getattr(["propTypes"], elem, scoperef)
+            if hit:
+                elem, scoperef = hit
+                while elem.tag == "variable":
+                    elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef)
+                return [("attribute", "%s" % p) for p in set(elem.names) - props]
+        return []
+
     def _tokenize_citdl_expr(self, citdl):
         for token in citdl.split('.'):
             if token.endswith('()'):
@@ -304,19 +328,20 @@ class ESTreeEvaluator(TreeEvaluator):
                     ctlines = [elem.get("name") + "()"]
                 return '\n'.join(ctlines)
 
-    def _ctor_hit_from_class(self, elem, scoperef):
-        """Return the ES ctor for the given class element, or None."""
+    def _ctor_hit_from_class(self, elem, scoperef, defn_only=False):
+        """Return the ECMAScript ctor for the given class element, or None."""
         if "constructor" in elem.names:
             class_scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
             return elem.names["constructor"], class_scoperef
         else:
             for classref in elem.get("classrefs", "").split():
                 try:
-                    basehit = self._hit_from_type_inference(classref, scoperef)
+                    base_hit = self._hit_from_type_inference(classref, scoperef, defn_only=defn_only)
                 except CodeIntelError as ex:
                     self.warn(str(ex))
                 else:
-                    ctor_hit = self._ctor_hit_from_class(*basehit)
+                    base_elem, base_scoperef = base_hit
+                    ctor_hit = self._ctor_hit_from_class(base_elem, base_scoperef, defn_only=defn_only)
                     if ctor_hit:
                         return ctor_hit
         return None
@@ -325,12 +350,13 @@ class ESTreeEvaluator(TreeEvaluator):
         # TODO: compare with CitadelEvaluator._getSymbolCallTips()
         elem, scoperef = hit
         if elem.tag == "variable":
-            XXX
+            # XXX
+            pass
         elif elem.tag == "scope":
             ilk = elem.get("ilk")
             if ilk == "function":
                 calltip = self._calltip_from_func(elem, scoperef)
-            elif ilk == "class":
+            elif ilk in ("class", "instance"):
                 calltip = self._calltip_from_class(elem, scoperef)
             else:
                 raise NotImplementedError("unexpected scope ilk for "
@@ -376,51 +402,56 @@ class ESTreeEvaluator(TreeEvaluator):
             members.add((elem.get("ilk") or elem.tag, elem.get("name")))
         return members
 
-    def _members_from_hit(self, hit):
+    def _members_from_hit(self, hit, defn_only=False, hidden=None):
         elem, scoperef = hit
+        ilk = elem.get("ilk")
+
+        if ilk == "class":
+            refs = "classrefs"
+            if hidden is None:
+                hidden = ["__hidden__", "__instancevar__"]
+        elif ilk == "instance":
+            refs = "classrefs"
+            if hidden is None:
+                hidden = ["__hidden__", "__staticmethod__", "__ctor__"]
+        elif ilk == "interface":
+            refs = "interfacerefs"
+            if hidden is None:
+                hidden = ["__hidden__"]
+        elif ilk == "object":
+            refs = "objectrefs"
+            if hidden is None:
+                hidden = ["__hidden__"]
+        else:
+            refs = None
+            if hidden is None:
+                hidden = ["__hidden__"]
+
         members = set()
         for child in elem:
-            if "__hidden__" not in child.get("attributes", "").split():
+            attributes = child.get("attributes", "").split()
+            for attr in hidden:
+                if attr in attributes:
+                    break
+            else:
                 try:
                     members.update(self._members_from_elem(child))
                 except CodeIntelError as ex:
                     self.warn("%s (skipping members for %s)", ex, child)
 
-        if elem.get("ilk") == "class":
-            for classref in elem.get("classrefs", "").split():
+        if refs:
+            for ref in elem.get(refs, "").split():
                 try:
-                    subhit = self._hit_from_type_inference(classref, scoperef)
+                    subhit = self._hit_from_type_inference(ref, scoperef, defn_only=defn_only)
                 except CodeIntelError as ex:
                     # Continue with what we *can* resolve.
                     self.warn(str(ex))
                 else:
-                    members.update(self._members_from_hit(subhit))
-            # Add special __class__ attribute.
-            members.add(("variable", "__class__"))
-
-        elif elem.get("ilk") == "object":
-            for objectref in elem.get("objectrefs", "").split():
-                try:
-                    subhit = self._hit_from_type_inference(objectref, scoperef)
-                except CodeIntelError as ex:
-                    # Continue with what we *can* resolve.
-                    self.warn(str(ex))
-                else:
-                    members.update(self._members_from_hit(subhit))
-
-        elif elem.get("ilk") == "interface":
-            for interfaceref in elem.get("interfacerefs", "").split():
-                try:
-                    subhit = self._hit_from_type_inference(interfaceref, scoperef)
-                except CodeIntelError as ex:
-                    # Continue with what we *can* resolve.
-                    self.warn(str(ex))
-                else:
-                    members.update(self._members_from_hit(subhit))
+                    members.update(self._members_from_hit(subhit, defn_only, hidden=hidden))
 
         return members
 
-    def _hit_from_citdl(self, expr, scoperef, defn_only=False):
+    def _hit_from_citdl(self, expr, scoperef, elem=None, defn_only=False):
         """Resolve the given CITDL expression (starting at the given
         scope) down to a non-import/non-variable hit.
         """
@@ -428,8 +459,13 @@ class ESTreeEvaluator(TreeEvaluator):
         tokens = list(self._tokenize_citdl_expr(expr))
         # self.log("expr tokens: %r", tokens)
 
+        hit, nconsumed = self._hit_from_tokens(tokens, expr, scoperef, elem=elem, defn_only=defn_only)
+
+        return hit
+
+    def _hit_from_tokens(self, tokens, expr, scoperef, elem=None, defn_only=False):
         # First part...
-        hit, nconsumed = self._hit_from_first_part(tokens, scoperef)
+        hit, nconsumed = self._hit_from_first_part(tokens, scoperef, elem=elem, defn_only=defn_only)
         if not hit:
             # TODO: Add the fallback Buffer-specific near-by hunt
             #      for a symbol for the first token. See my spiral-bound
@@ -440,25 +476,51 @@ class ESTreeEvaluator(TreeEvaluator):
         # ...the remainder.
         remaining_tokens = tokens[nconsumed:]
         while remaining_tokens:
-            self.debug("_hit_from_citdl: resolve %r on %r in %r", remaining_tokens, *hit)
+            elem, scoperef = hit
+            self.debug("_hit_from_citdl: resolve %r on %r in %r", remaining_tokens, elem, scoperef)
             if remaining_tokens[0] == "()":
-                new_hit = self._hit_from_call(*hit)
+                new_hit = self._hit_from_call(elem, scoperef, defn_only=defn_only)
                 nconsumed = 1
             else:
-                new_hit, nconsumed = self._hit_from_getattr(remaining_tokens, *hit)
+                new_hit, nconsumed = self._hit_from_getattr(remaining_tokens, elem, scoperef, defn_only=defn_only)
             remaining_tokens = remaining_tokens[nconsumed:]
             hit = new_hit
 
         # Resolve any variable type inferences.
-        # TODO: Need to *recursively* resolve hits.
         elem, scoperef = hit
-        if elem.tag == "variable" and not defn_only:
-            elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef)
+        while elem.tag == "variable" and not defn_only:
+            elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef, defn_only=defn_only)
 
         self.info("'%s' is %s on %s", expr, elem, scoperef)
-        return (elem, scoperef)
+        return (elem, scoperef), len(tokens) - len(remaining_tokens)
 
-    def _hit_from_first_part(self, tokens, scoperef):
+    def _hit_from_require(self, tokens, scoperef, elem=None, defn_only=False):
+        # Node.js / CommonJS hack: try to resolve things via require()
+        if len(tokens) > 1 and tokens[1] == "()":
+            if elem is not None:
+                requirename = elem.get("required_library_name")
+                if requirename:
+                    self.log("_hit_from_variable_type_inference: resolving require(%r)", requirename)
+                    module_name = requirename.lstrip("./")
+                    if len(tokens) > 2:
+                        symbol = tokens[2]
+                        remaining_tokens = tokens[3:]
+                        _nconsumed = 2
+                    else:
+                        symbol = None
+                        remaining_tokens = tokens[2:]
+                        _nconsumed = 1
+                    require = FakeImport(elem,
+                                         module=requirename,
+                                         symbol=symbol,
+                                         alias=None)
+                    hit, nconsumed = self._hit_from_elem_imports([module_name] + remaining_tokens, require, defn_only=defn_only)
+                    if hit is not None:
+                        return hit, nconsumed + _nconsumed
+                raise CodeIntelError("could not resolve require(%r)" % requirename)
+        return None, None
+
+    def _hit_from_first_part(self, tokens, scoperef, elem=None, defn_only=False):
         """Find a hit for the first part of the tokens.
 
         Returns (<hit>, <num-tokens-consumed>) or (None, None) if could
@@ -483,6 +545,11 @@ class ESTreeEvaluator(TreeEvaluator):
             scoperef = (self.built_in_blob, [])
             return (self.built_in_blob, scoperef), 1
 
+        if first_token == "require":
+            hit, nconsumed = self._hit_from_require(tokens, scoperef, elem=elem, defn_only=defn_only)
+            if hit is not None:
+                return hit, nconsumed
+
         while True:
             elem = self._elem_from_scoperef(scoperef)
             if first_token in elem.names:
@@ -491,7 +558,7 @@ class ESTreeEvaluator(TreeEvaluator):
                          first_token, scoperef, elem.names[first_token])
                 return (elem.names[first_token], scoperef), 1
 
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
             if hit is not None:
                 self.log("is '%s' accessible on %s? yes: %s",
                          ".".join(tokens[:nconsumed]), scoperef, hit[0])
@@ -530,13 +597,13 @@ class ESTreeEvaluator(TreeEvaluator):
 
     def _add_parentdirlib(self, libs, tokens):
         """Add a lazily loaded parent directory import library."""
-        if isinstance(libs, ESImportLibGenerator):
+        if isinstance(libs, ECMAScriptImportLibGenerator):
             # Reset to the original libs.
             libs = libs.libs
-        libs = ESImportLibGenerator(self.mgr, self.trg.lang, self.buf.path, tokens, libs)
+        libs = ECMAScriptImportLibGenerator(self.mgr, self.trg.lang, self.buf.path, tokens, libs)
         return libs
 
-    def __hit_from_elem_imports(self, tokens, elem):
+    def _hit_from_elem_imports(self, tokens, elem, defn_only=False):
         """See if token is from one of the imports on this <scope> elem.
 
         Returns (<hit>, <num-tokens-consumed>) or (None, None) if not found.
@@ -552,7 +619,7 @@ class ESTreeEvaluator(TreeEvaluator):
         #      just return it. It is complicated enough that the
         #      construction of members has to know the original context.
         #      See the "Foo.mypackage.<|>mymodule.yo" part of test
-        #      python/cpln/wacky_imports.
+        #      ecmascript/cpln/wacky_imports.
         #      XXX Not totally confident that this is the right answer.
         first_token = tokens[0]
         possible_submodule_tokens = []
@@ -561,7 +628,7 @@ class ESTreeEvaluator(TreeEvaluator):
         orig_libs = self.libs
         for imp_elem in (i for i in elem if i.tag == "import"):
             libs = orig_libs  # reset libs back to the original
-            self.debug("'%s ...' from %r?", tokens[0], imp_elem)
+            self.debug("'%s ...' from %r?", first_token, imp_elem)
             alias = imp_elem.get("alias")
             symbol_name = imp_elem.get("symbol")
             module_name = imp_elem.get("module")
@@ -582,55 +649,72 @@ class ESTreeEvaluator(TreeEvaluator):
                     module_name = symbol_name
                     symbol_name = None
 
-            if symbol_name:
-                # from module import symbol, from module import symbol as alias
-                # from module import submod, from module import submod as alias
-                if (alias and alias == first_token) or (not alias and symbol_name == first_token):
-                    # Try 'from module import symbol/from module import
-                    # symbol as alias' first.
+            # from module import *
+            if symbol_name == "*":
+                try:
                     if allow_parentdirlib:
                         libs = self._add_parentdirlib(libs, module_name.split("/"))
+                    blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
+                except CodeIntelError:
+                    pass  # don't freak out: might not be our import anyway
+                else:
+                    self._set_reldirlib_from_blob(blob)
                     try:
-                        blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
-                        if symbol_name in blob.names:
-                            return (blob.names[symbol_name], (blob, [])), 1
-                        else:
-                            self._set_reldirlib_from_blob(blob)
-                            hit, nconsumed = self._hit_from_elem_imports([first_token] + tokens[1:], blob)
-                            if hit:
-                                return hit, nconsumed
+                        hit, nconsumed = self._hit_from_getattr(tokens, blob, (blob, []), defn_only=defn_only)
                     except CodeIntelError:
-                        # That didn't work either. Give up.
-                        self.warn("could not import '%s' from %s", first_token, imp_elem)
-
-                # from module import *
-                elif symbol_name == "*":
-                    try:
-                        if allow_parentdirlib:
-                            libs = self._add_parentdirlib(libs, module_name.split("/"))
-                        blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
-                    except CodeIntelError:
-                        pass  # don't freak out: might not be our import anyway
+                        pass
                     else:
-                        self._set_reldirlib_from_blob(blob)
+                        if hit:
+                            return hit, nconsumed
+
+            # from module import symbol, from module import symbol as alias
+            # from module import submod, from module import submod as alias
+            elif (
+                (alias and alias == first_token) or
+                (not alias and symbol_name == first_token) or
+                (not alias and module_name == first_token)
+            ):
+                if not symbol_name:
+                    symbol_name = "default"
+                # Try 'from module import symbol/from module import
+                # symbol as alias' first.
+                if allow_parentdirlib:
+                    libs = self._add_parentdirlib(libs, module_name.split("/"))
+                try:
+                    blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
+                except CodeIntelError:
+                    # That didn't work either. Give up.
+                    self.warn("could not import '%s' from %s", first_token, imp_elem)
+                else:
+                    self._set_reldirlib_from_blob(blob)
+                    # Always try to get exports first, fallback to global scope if there isn't one:
+                    if "exports" in blob.names:
+                        exports = blob.names["exports"]
+                    else:
+                        exports = blob
+
+                    # Try to find the symbol in the exported items:
+                    if symbol_name in exports.names:
+                        elem = exports.names[symbol_name]
+                    elif symbol_name == "default":
+                        elem = exports  # "default" fallsback to the full exports
+                    else:
+                        elem = None
+
+                    if elem is not None:
+                        scoperef = (blob, [])
+                        while elem.tag == "variable" and (not defn_only or symbol_name == "default"):
+                            elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef, defn_only=defn_only)
+                        return (elem, scoperef), 1
+                    else:
                         try:
-                            hit, nconsumed = self._hit_from_getattr(tokens, blob, (blob, []))
+                            hit, nconsumed = self._hit_from_elem_imports([first_token] + tokens[1:], blob, defn_only=defn_only)
                         except CodeIntelError:
+                            self.warn("could not import name '%s' from %s", first_token, imp_elem)
                             pass
                         else:
                             if hit:
                                 return hit, nconsumed
-
-            elif (alias and alias == first_token) or (
-                (not alias or self.trg.form == TRG_FORM_DEFN) and
-                module_name == first_token
-            ):
-                if allow_parentdirlib:
-                    libs = self._add_parentdirlib(libs, module_name.split("/"))
-                blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
-                if "exports" in blob.names and "default" in blob.names["exports"]:
-                    return (blob.names["exports"]["default"], (blob, [])), 1
-                return (blob, (blob, [])), 1
 
             elif "/" in module_name:
                 # E.g., might be looking up ('os', 'path', ...) and
@@ -643,6 +727,7 @@ class ESTreeEvaluator(TreeEvaluator):
                     #      imp_elem: <import os.path>
                     #      return:   <blob 'os.path'> for first two tokens
                     blob = import_handler.import_blob_name(module_name, libs, self.ctlr)
+                    self._set_reldirlib_from_blob(blob)
                     # XXX Is this correct scoperef for module object?
                     return (blob, (blob, [])), len(module_tokens)
                 elif module_tokens[0] == tokens[0]:
@@ -661,47 +746,33 @@ class ESTreeEvaluator(TreeEvaluator):
                 for module_tokens in possible_submodule_tokens:
                     if module_tokens[:i] == tokens[:i]:
                         blob = import_handler.import_blob_name("/".join(module_tokens[:i]), libs, self.ctlr)
+                        self._set_reldirlib_from_blob(blob)
                         # XXX Is this correct scoperef for module object?
                         return (blob, (blob, [])), i
 
         return None, None
 
-    def _hit_from_elem_imports(self, tokens, elem):
-        """See if token is from one of the imports on this <scope> elem.
-
-        Returns (<hit>, <num-tokens-consumed>) or (None, None) if not found.
-        XXX import_handler.import_blob_name() calls all have potential
-            to raise CodeIntelError.
-        """
-        # This is a wrapper function around the real __hit_from_elem_imports,
-        # that will update the relative dir libs appropriately when an import
-        # hit is made - see bug 88971 for why this is necessary.
-        hit, nconsumed = self.__hit_from_elem_imports(tokens, elem)
-        if hit is not None:
-            self._set_reldirlib_from_blob(hit[0])
-        return hit, nconsumed
-
-    def _hit_from_call(self, elem, scoperef):
+    def _hit_from_call(self, elem, scoperef, defn_only=False):
         """Resolve the function call inference for 'elem' at 'scoperef'."""
         # This might be a variable, in that case we keep resolving the variable
         # until we get to the final function/class element that is to be called.
         while elem.tag == "variable":
-            elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef)
+            elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef, defn_only=defn_only)
         ilk = elem.get("ilk")
         if ilk == "class":
             # Return the class element.
-            self.log("_hit_from_call: resolved to class '%s'", elem.get("name"))
-            return (elem, scoperef)
+            self.log("_hit_from_call: resolved to class instance '%s'", elem.get("name"))
+            return (ClassInstance(elem), scoperef)
         if ilk == "function":
             citdl = elem.get("returns")
             if citdl:
                 self.log("_hit_from_call: function with citdl %r", citdl)
                 # scoperef has to be set to the function called
                 func_scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
-                return self._hit_from_citdl(citdl, func_scoperef)
+                return self._hit_from_citdl(citdl, func_scoperef, elem=elem, defn_only=defn_only)
         raise CodeIntelError("no return type info for %r" % elem)
 
-    def _hit_from_getattr(self, tokens, elem, scoperef):
+    def _hit_from_getattr(self, tokens, elem, scoperef, defn_only=False):
         """Return a hit for a getattr on the given element.
 
         Returns (<hit>, <num-tokens-consumed>) or raises an CodeIntelError.
@@ -715,28 +786,9 @@ class ESTreeEvaluator(TreeEvaluator):
         #      -- typically those for common built-in classes.
         first_token = tokens[0]
         self.log("resolve getattr '%s' on %r in %r:", first_token, elem, scoperef)
+
         if elem.tag == "variable":
-            field = elem.names.get(first_token)
-            if field is not None:
-                self.log("field is %r in %r", field, elem)
-                # update the scoperef, we are now inside the class.
-                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
-                return (field, scoperef), 1
-            elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef)
-
-        assert elem.tag == "scope"
-        ilk = elem.get("ilk")
-        if ilk == "function":
-            attr = elem.names.get(first_token)
-            if attr is not None:
-                ilk = elem.get("ilk")
-                if ilk in ("class", "object", "interface", "function"):
-                    return (attr, scoperef), 1
-            # Internal function arguments and variable should
-            # *not* resolve. And we don't support function
-            # attributes.
-
-        elif ilk == "class":
+           # FIXME: This part is needed while variables are nested:
             attr = elem.names.get(first_token)
             if attr is not None:
                 self.log("attr is %r in %r", attr, elem)
@@ -744,14 +796,43 @@ class ESTreeEvaluator(TreeEvaluator):
                 scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
                 return (attr, scoperef), 1
 
-            # When looking for a __class__ on a class instance, we match the
-            # class itself - bug .
-            if first_token == "__class__":
-                self.log("attr is class %r", elem)
-                return (elem, scoperef), 1
+            citdl = elem.get("citdl")
+            if not citdl:
+                raise CodeIntelError("no type-inference info for %r" % elem)
+            self._check_infinite_recursion(citdl)
+            tokens = list(self._tokenize_citdl_expr(citdl)) + tokens
+            # self.log("citdl tokens: %r", tokens)
+
+            hit, nconsumed = self._hit_from_tokens(tokens, citdl, scoperef, elem=elem, defn_only=defn_only)
+            if hit is not None:
+                return hit, nconsumed
+
+            raise CodeIntelError("could not resolve '%s' getattr on %r in %r"
+                                % (first_token, elem, scoperef))
+
+        assert elem.tag == "scope"
+        ilk = elem.get("ilk")
+        if ilk == "function":
+            attr = elem.names.get(first_token)
+            if attr is not None:
+                ilk = elem.get("ilk")
+                if ilk in ("class", "instance", "object", "interface", "function"):
+                    return (attr, scoperef), 1
+            # Internal function arguments and variable should
+            # *not* resolve. And we don't support function
+            # attributes.
+
+        elif ilk in ("class", "instance"):
+            attr = elem.names.get(first_token)
+            if attr is not None:
+                self.log("attr is %r in %r", attr, elem)
+                if elem.get("ilk") != "object":
+                    # update the scoperef, we are now inside the class.
+                    scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
+                return (attr, scoperef), 1
 
             self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
             if hit is not None:
                 return hit, nconsumed
 
@@ -759,9 +840,9 @@ class ESTreeEvaluator(TreeEvaluator):
                 try:
                     self.log("is '%s' from base class: %r?", first_token,
                              classref)
-                    base_elem, base_scoperef = self._hit_from_type_inference(classref, scoperef)
+                    base_elem, base_scoperef = self._hit_from_type_inference(classref, scoperef, defn_only=defn_only)
                     return self._hit_from_getattr(tokens, base_elem,
-                                                  base_scoperef)
+                                                  base_scoperef, defn_only=defn_only)
                 except CodeIntelError as ex:
                     self.log("could not resolve classref '%s' on scoperef %r",
                              classref, scoperef, )
@@ -771,12 +852,13 @@ class ESTreeEvaluator(TreeEvaluator):
             attr = elem.names.get(first_token)
             if attr is not None:
                 self.log("attr is %r in %r", attr, elem)
-                # update the scoperef, we are now inside the object.
-                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
+                if elem.get("ilk") != "object":
+                    # update the scoperef, we are now inside the object.
+                    scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
                 return (attr, scoperef), 1
 
             self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
             if hit is not None:
                 return hit, nconsumed
 
@@ -784,9 +866,9 @@ class ESTreeEvaluator(TreeEvaluator):
                 try:
                     self.log("is '%s' from base object: %r?", first_token,
                              objectref)
-                    base_elem, base_scoperef = self._hit_from_type_inference(objectref, scoperef)
+                    base_elem, base_scoperef = self._hit_from_type_inference(objectref, scoperef, defn_only=defn_only)
                     return self._hit_from_getattr(tokens, base_elem,
-                                                  base_scoperef)
+                                                  base_scoperef, defn_only=defn_only)
                 except CodeIntelError as ex:
                     self.log("could not resolve objectref '%s' on scoperef %r",
                              objectref, scoperef, )
@@ -796,12 +878,13 @@ class ESTreeEvaluator(TreeEvaluator):
             attr = elem.names.get(first_token)
             if attr is not None:
                 self.log("attr is %r in %r", attr, elem)
-                # update the scoperef, we are now inside the interface.
-                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
+                if elem.get("ilk") != "object":
+                    # update the scoperef, we are now inside the interface.
+                    scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
                 return (attr, scoperef), 1
 
             self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
             if hit is not None:
                 return hit, nconsumed
 
@@ -809,9 +892,9 @@ class ESTreeEvaluator(TreeEvaluator):
                 try:
                     self.log("is '%s' from base interface: %r?", first_token,
                              interfaceref)
-                    base_elem, base_scoperef = self._hit_from_type_inference(interfaceref, scoperef)
+                    base_elem, base_scoperef = self._hit_from_type_inference(interfaceref, scoperef, defn_only=defn_only)
                     return self._hit_from_getattr(tokens, base_elem,
-                                                  base_scoperef)
+                                                  base_scoperef, defn_only=defn_only)
                 except CodeIntelError as ex:
                     self.log("could not resolve interfaceref '%s' on scoperef %r",
                              interfaceref, scoperef, )
@@ -823,27 +906,30 @@ class ESTreeEvaluator(TreeEvaluator):
                 self.log("attr is %r in %r", attr, elem)
                 return (attr, scoperef), 1
 
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem)
+            self.debug("look for %r from imports in %r", tokens, elem)
+            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
             if hit is not None:
                 return hit, nconsumed
+
         else:
             raise NotImplementedError("unexpected scope ilk: %r" % ilk)
 
         raise CodeIntelError("could not resolve '%s' getattr on %r in %r"
                              % (first_token, elem, scoperef))
 
-    def _hit_from_variable_type_inference(self, elem, scoperef):
+    def _hit_from_variable_type_inference(self, elem, scoperef, defn_only=False):
         """Resolve the type inference for 'elem' at 'scoperef'."""
         citdl = elem.get("citdl")
         if not citdl:
             raise CodeIntelError("no type-inference info for %r" % elem)
         self.log("resolve '%s' type inference for %r:", citdl, elem)
-        return self._hit_from_citdl(citdl, scoperef)
 
-    def _hit_from_type_inference(self, citdl, scoperef):
+        return self._hit_from_citdl(citdl, scoperef, elem=elem, defn_only=defn_only)
+
+    def _hit_from_type_inference(self, citdl, scoperef, elem=None, defn_only=False):
         """Resolve the 'citdl' type inference at 'scoperef'."""
         self.log("resolve '%s' type inference:", citdl)
-        return self._hit_from_citdl(citdl, scoperef)
+        return self._hit_from_citdl(citdl, scoperef, elem=elem, defn_only=defn_only)
 
     @property
     def stdlib(self):
@@ -864,10 +950,10 @@ class ESTreeEvaluator(TreeEvaluator):
             parent_lpath = lpath[:-1]
             if parent_lpath:
                 elem = self._elem_from_scoperef((blob, parent_lpath))
-                if elem.get("ilk") == "class":
-                    # ES eval shouldn't consider the class-level
+                if elem.get("ilk") in ("class", "instance"):
+                    # ECMAScript eval shouldn't consider the class-level
                     # scope as a parent scope when resolving from the
-                    # top-level. (test python/cpln/skip_class_scope)
+                    # top-level. (test ecmascript/cpln/skip_class_scope)
                     parent_lpath = parent_lpath[:-1]
             return (blob, parent_lpath)
         elif blob is self._built_in_blob:

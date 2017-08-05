@@ -1116,6 +1116,7 @@ class LangZone(object):
                     res_index[base] = (scan_time, scan_error,
                                        old_res_data)
                     res_index_has_changed = True
+                log.error("db scan error on '%s': %s", buf.path, scan_error)
 
             else:
                 # Only consider new blobs if there wasn't a scan error.

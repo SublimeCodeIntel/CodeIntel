@@ -377,7 +377,7 @@ def _addUnicodeScanInputTests():
     # the CILEs.
     ext_from_lang = {
         "perl": ".pl", "python": ".py", "php": ".php", "tcl": ".tcl",
-        "javascript": ".js", "ruby": ".rb", "es": ".es",
+        "javascript": ".js", "ruby": ".rb", "ecmascript": ".es",
     }
     content_and_cix_from_lang = {
         "perl": (
@@ -454,8 +454,8 @@ end
             r"function foo { dump('hi\n'); }",
             u"""\
 <codeintel version="2.0">
-  <file lang="ES" mtime="42" path="scan_inputs/unicode/&#1083;&#1097;/foo.es">
-    <scope ilk="blob" lang="ES" name="foo.es" src="scan_inputs/unicode/&#1083;&#1097;/foo.es">
+  <file lang="ECMAScript" mtime="42" path="scan_inputs/unicode/&#1083;&#1097;/foo.es">
+    <scope ilk="blob" lang="ECMAScript" name="foo.es" src="scan_inputs/unicode/&#1083;&#1097;/foo.es">
       <scope ilk="function" line="1" lineend="1" name="foo" signature="foo()" />
     </scope>
   </file>

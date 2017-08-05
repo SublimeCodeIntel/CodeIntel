@@ -296,9 +296,9 @@ class NodeJSLangInfo(_JSLikeLangInfo):
     exts = ['.js']
     is_minor_variant = JavaScriptLangInfo
 
-class ESLangInfo(_JSLikeLangInfo):
-    name = "ES"
-    exts = ['.es', '.node', '.js', '.jsx']
+class ECMAScriptLangInfo(_JSLikeLangInfo):
+    name = "ECMAScript"
+    exts = ['.js', '.jsx', '.es']
 
 class CoffeeScriptLangInfo(_JSLikeLangInfo):
     name = "CoffeeScript"

@@ -1235,10 +1235,7 @@ class AST2CIXVisitor(ast.NodeVisitor):
                         else:
                             break
                 scope = '.'.join(scope_parts)
-                if _isclass(variable):
-                    ts = [scope]
-                else:
-                    ts = [scope + "()"]
+                ts = [scope + "()"]
             elif citdl:
                 # For code like this:
                 #   for line in lines:

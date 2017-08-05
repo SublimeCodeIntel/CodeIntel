@@ -3,18 +3,19 @@
 #
 # Contributors:
 #   Trent Mick (TrentM@ActiveState.com)
+#   German Mendez Bravo (Kronuz) (german.mb@gmail.com)
 
 """
-    escile - a Code Intelligence Language Engine for the ES language
+    ecmacile - a Code Intelligence Language Engine for the ECMAScript language
 
     Module Usage:
-        from escile import scan
+        from ecmacile import scan
         mtime = os.stat("foo.js")[stat.ST_MTIME]
         content = open("foo.js", "r").read()
         scan(content, "foo.js", mtime=mtime)
 
     Command-line Usage:
-        escile.py [<options>...] [<ES files>...]
+        ecmacile.py [<options>...] [<ECMAScript files>...]
 
     Options:
         -h, --help          dump this help and exit
@@ -30,7 +31,7 @@
                             the language of the file being scanned
         -c, --clock         print timing info for scans (CIX is not printed)
 
-    One or more ES files can be specified as arguments or content can be
+    One or more ECMAScript files can be specified as arguments or content can be
     passed in on stdin. A directory can also be specified, in which case
     all .js, .jsx and .es files in that directory are scanned.
 
@@ -103,10 +104,11 @@ import ciElementTree as ET
 import esprima
 
 from codeintel2.common import CILEError
-from codeintel2.jsdoc import JSDoc as RealJSDoc
+from codeintel2.jsdoc import JSDoc as RealJSDoc, JSDocParameter
 from codeintel2 import util
 
 __LOCAL__ = "__local__"
+__EXPORTED__ = "__exported__"
 __INSTANCEVAR__ = "__instancevar__"
 
 
@@ -118,7 +120,7 @@ class ESCILEError(CILEError):
 
 # ---- global data
 _version_ = (0, 1, 0)
-log = logging.getLogger("codeintel.escile")
+log = logging.getLogger("codeintel.ecmacile")
 # log.setLevel(logging.DEBUG)
 util.makePerformantLogger(log)
 
@@ -127,34 +129,75 @@ _gClock = None  # if gathering timing data this is set to time retrieval fn
 _gStartTime = None   # start time of current file being scanned
 
 
+JSDocParameter.type_map = {
+    "void": "void",
+    "null": "null",
+    "undefined": "undefined",
+    "regex": "RegExp",
+    "array": "Array",
+    "function": "Function",
+    "object": "Object",
+    "number": "Number",
+    "string": "String",
+    "boolean": "Boolean",
+}
+
+
+def JSDocParameter____init__(self, paramname, paramtype=None, doc=None):
+    self.paramname = paramname
+    self.paramtype = paramtype
+    self.doc = doc
+
+    if paramname:
+        self.optional = paramname[0] == '[' and paramname[-1] == ']'
+        name = paramname[1:-1] if self.optional else paramname
+        name, _, default = name.partition('=')
+        self.name = name.strip()
+        self.default = default.strip()
+    else:
+        self.name = None
+        self.default = None
+        self.optional = None
+
+    if paramtype:
+        paramtype = paramtype.strip()
+        paramtype = paramtype.lstrip('{')  # FIXME: Bug in JSDoc "{string|function}" gets "{string"
+        self.type = JSDocParameter.type_map.get(paramtype.lower(), paramtype)
+    else:
+        self.type = None
+
+
+JSDocParameter.__init__ = JSDocParameter____init__
+
+
 class JSDoc(RealJSDoc):
     def __init__(self, comment=None, strip_html_tags=False):
         RealJSDoc.__init__(self, comment=comment, strip_html_tags=strip_html_tags)
         params_dict = {}
         for param in self.params:
-            name = param.paramname
-            if name:
-                param.optional = name[0] == '[' and name[-1] == ']'
-                if param.optional:
-                    name = name[1:-1]
-                name, _, default = name.partition('=')
-                param.paramname = name.strip()
-                param.default = default.strip()
-                params_dict[param.paramname] = param
+            params_dict[param.paramname] = param
         self.params_dict = params_dict
 
 
 # ---- internal routines and classes
 def _isobject(namespace):
-    return (len(namespace["types"]) == 1 and "object" in namespace["types"])
+    return (len(namespace["types"]) == 1 and "object" in namespace["types"] or namespace["symbols"])
 
 
 def _isclass(namespace):
     return (len(namespace["types"]) == 1 and "class" in namespace["types"])
 
 
+def _isinterface(namespace):
+    return (len(namespace["types"]) == 1 and "interface" in namespace["types"])
+
+
 def _isfunction(namespace):
     return (len(namespace["types"]) == 1 and "function" in namespace["types"])
+
+
+def _isrequire(namespace):
+    return (len(namespace["types"]) == 1 and "require()" in namespace["types"])
 
 
 def getAttrStr(attrs):
@@ -180,14 +223,6 @@ def getAttrStr(attrs):
 # match 0x00-0x1f except TAB(0x09), LF(0x0A), and CR(0x0D)
 _encre = re.compile('([\x00-\x08\x0b\x0c\x0e-\x1f])')
 
-# XXX: this is not used anywhere, is it needed at all?
-if sys.version_info >= (2, 3):
-    charrefreplace = 'xmlcharrefreplace'
-else:
-    # ES 2.2 doesn't have 'xmlcharrefreplace'. Fallback to a
-    # literal '?' -- this is better than failing outright.
-    charrefreplace = 'replace'
-
 
 def xmlencode(s):
     """Encode the given string for inclusion in a UTF-8 XML document.
@@ -203,7 +238,7 @@ def xmlencode(s):
     #   http://www.w3.org/TR/2000/REC-xml-20001006#charsets
     #
     # Dev Notes:
-    # - It would be nice if ES has a codec for this. Perhaps we
+    # - It would be nice if ECMAScript has a codec for this. Perhaps we
     #   should write one.
     # - Eric, at one point, had this change to '_xmlencode' for rubycile:
     #    p4 diff2 -du \
@@ -281,7 +316,8 @@ def _node_citdls(node):
             if ' ' in citdl:
                 # XXX Drop the <start-scope> part of CITDL for now.
                 citdl = citdl.split(None, 1)[0]
-            if citdl != 'undefined':
+            # Don't emit void types, it does not help us.
+            if citdl not in ("undefined", "null", "void"):
                 yield citdl
 
 
@@ -292,21 +328,21 @@ def _node_citdl(node):
 
 
 class AST2CIXVisitor(esprima.NodeVisitor):
-    """Generate Code Intelligence XML (CIX) from walking a ES AST tree.
+    """Generate Code Intelligence XML (CIX) from walking a ECMAScript AST tree.
 
     This just generates the CIX content _inside_ of the <file/> tag. The
     prefix and suffix have to be added separately.
 
-    Note: All node text elements are encoded in UTF-8 format by the ES AST
+    Note: All node text elements are encoded in UTF-8 format by the ECMAScript AST
           tree processing, no matter what encoding is used for the file's
           original content. The generated CIX XML will also be UTF-8 encoded.
 
-          ES AST docs at:
+          ECMAScript AST docs at:
           http://esprima.org
     """
     DEBUG = 0
 
-    def __init__(self, moduleName=None, content=None, filename=None, lang='ES'):
+    def __init__(self, moduleName=None, content=None, filename=None, lang='ECMAScript'):
         self.lang = lang
         if self.DEBUG is None:
             self.DEBUG = log.isEnabledFor(logging.DEBUG)
@@ -326,8 +362,14 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         self.cix = ET.TreeBuilder()
         self.tree = None
 
-        self.lambdas = 0
-        self.requires = 0
+        self.uniques = {}
+
+    def _unique_id(self, name):
+        if name not in self.uniques:
+            self.uniques[name] = 0
+        unique_name = "____%s_%s" % (name, self.uniques[name])
+        self.uniques[name] += 1
+        return unique_name
 
     def get_type(self, obj):
         typ = type(obj.value)
@@ -413,10 +455,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
     def cix_symbol(self, node, parentIsClass=0):
         if _isclass(node):
             self.cix_class(node)
-        elif _isobject(node):
-            self.cix_object(node)
+        elif _isinterface(node):
+            self.cix_interface(node)
         elif _isfunction(node):
             self.cix_function(node)
+        elif _isobject(node):
+            self.cix_object(node)
         else:
             self.cix_variable(node, parentIsClass)
 
@@ -430,47 +474,21 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             # usual class variables.
             extra_attributes.append(__INSTANCEVAR__)
 
-        if "is-exported" not in node:
-            extra_attributes.append(__LOCAL__)
+        if "is-exported" in node:
+            extra_attributes.append(__EXPORTED__)
 
-        attrs = _node_attrs(node, citdl=_node_citdl(node), extra_attributes=extra_attributes)
+        citdl = _node_citdl(node)
+        required_library_name = node.get("required_library_name")
+        attrs = _node_attrs(node,
+                            citdl=citdl,
+                            required_library_name=required_library_name,
+                            extra_attributes=extra_attributes)
 
         self.emit_start('variable', attrs)
 
         self.cix_symbols(node["symbols"])
 
         self.emit_end('variable')
-
-    def cix_object(self, node):
-        # log.debug("cix_object(%s, level=%r)", '.'.join(node["nspath"]), level)
-
-        if node.get("objectrefs"):
-            citdls = (t for t in (_node_citdl(n) for n in node["objectrefs"])
-                      if t is not None)
-            objectrefs = " ".join(citdls)
-        else:
-            objectrefs = None
-
-        extra_attributes = []
-
-        if "is-exported" not in node:
-            extra_attributes.append(__LOCAL__)
-
-        attrs = _node_attrs(node,
-                            extra_attributes=extra_attributes,
-                            lineend=node.get("lineend"),
-                            signature=node.get("signature"),
-                            ilk="object",
-                            objectrefs=objectrefs)
-
-        self.emit_start('scope', attrs)
-
-        for import_ in node.get("imports", []):
-            self.cix_import(import_)
-
-        self.cix_symbols(node["symbols"], parentIsClass=0)
-
-        self.emit_end('scope')
 
     def cix_class(self, node):
         # log.debug("cix_class(%s, level=%r)", '.'.join(node["nspath"]), level)
@@ -484,8 +502,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         extra_attributes = []
 
-        if "is-exported" not in node:
-            extra_attributes.append(__LOCAL__)
+        if "is-exported" in node:
+            extra_attributes.append(__EXPORTED__)
 
         attrs = _node_attrs(node,
                             extra_attributes=extra_attributes,
@@ -503,15 +521,87 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         self.emit_end('scope')
 
+    def cix_interface(self, node):
+        # log.debug("cix_interface(%s, level=%r)", '.'.join(node["nspath"]), level)
+
+        if node.get("interfacerefs"):
+            citdls = (t for t in (_node_citdl(n) for n in node["interfacerefs"])
+                      if t is not None)
+            interfacerefs = " ".join(citdls)
+        else:
+            interfacerefs = None
+
+        extra_attributes = []
+
+        if "is-exported" in node:
+            extra_attributes.append(__EXPORTED__)
+
+        attrs = _node_attrs(node,
+                            extra_attributes=extra_attributes,
+                            lineend=node.get("lineend"),
+                            signature=node.get("signature"),
+                            ilk="interface",
+                            interfacerefs=interfacerefs)
+
+        self.emit_start('scope', attrs)
+
+        for import_ in node.get("imports", []):
+            self.cix_import(import_)
+
+        self.cix_symbols(node["symbols"], parentIsClass=0)
+
+        self.emit_end('scope')
+
+    def cix_object(self, node):
+        # log.debug("cix_object(%s, level=%r)", '.'.join(node["nspath"]), level)
+
+        if node.get("objectrefs"):
+            citdls = (t for t in (_node_citdl(n) for n in node["objectrefs"])
+                      if t is not None)
+            objectrefs = " ".join(citdls)
+        else:
+            objectrefs = None
+
+        extra_attributes = []
+
+        if "is-exported" in node:
+            extra_attributes.append(__EXPORTED__)
+
+        citdl = _node_citdl(node)
+        required_library_name = node.get("required_library_name")
+        attrs = _node_attrs(node,
+                            extra_attributes=extra_attributes,
+                            lineend=node.get("lineend"),
+                            signature=node.get("signature"),
+                            ilk="object",
+                            citdl=citdl,
+                            required_library_name=required_library_name,
+                            objectrefs=objectrefs)
+
+        self.emit_start('scope', attrs)
+
+        for import_ in node.get("imports", []):
+            self.cix_import(import_)
+
+        self.cix_symbols(node["symbols"], parentIsClass=0)
+
+        self.emit_end('scope')
+
     def cix_argument(self, node):
         # log.debug("cix_argument(%s, level=%r)", '.'.join(node["nspath"]),
         # level)
         extra_attributes = []
 
-        if "is-exported" not in node:
-            extra_attributes.append(__LOCAL__)
+        if "is-exported" in node:
+            extra_attributes.append(__EXPORTED__)
 
-        attrs = _node_attrs(node, extra_attributes=extra_attributes, citdl=_node_citdl(node), ilk="argument")
+        citdl = _node_citdl(node)
+        required_library_name = node.get("required_library_name")
+        attrs = _node_attrs(node,
+                            extra_attributes=extra_attributes,
+                            citdl=citdl,
+                            required_library_name=required_library_name,
+                            ilk="argument")
         self.emit_tag('variable', attrs)
 
     def cix_function(self, node):
@@ -525,8 +615,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         extra_attributes = []
 
-        if "is-exported" not in node:
-            extra_attributes.append(__LOCAL__)
+        if "is-exported" in node:
+            extra_attributes.append(__EXPORTED__)
 
         attrs = _node_attrs(node,
                             extra_attributes=extra_attributes,
@@ -575,7 +665,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         nspath = ()
         namespace = {"name": self.moduleName,
                      "nspath": nspath,
-                     "types": OrderedDict({"module": 1}),
+                     "types": OrderedDict({"module": 0}),
                      "symbols": {}}
 
         doc = None
@@ -597,19 +687,148 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
         self.generic_visit(node)
 
-        citdl_types = self._guessTypes(node.argument)
+        # If there's already a variable assigned to the node, use it:
+        variable = node.argument and node.argument._assignee
+        if variable:
+            if _isclass(variable) or _isinterface(variable) or _isfunction(variable) or _isobject(variable) or _isrequire(variable):
+                citdl_types = [".".join(variable["nspath"])]
+            else:
+                citdl_types = list(variable["types"].keys())
+        else:
+            citdl_types = self._guessTypes(node.argument)
+
         for citdl in citdl_types:
             if citdl:
                 citdl = citdl.split(None, 1)[0]
-                if citdl and citdl != "undefined":
+                if citdl and citdl not in ("undefined", "null", "void"):
                     func_node = self.nsstack[-1]
                     if "returns" in func_node:
                         t = func_node["returns"]
                         t[citdl] = t.get(citdl, 0) + 1
 
-    # def visit_ExportAllDeclaration(self, node):
-    #     log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
-    #     self.generic_visit(node)
+    def _createObject(self, type, parent, node, isExported):
+        nspath = parent["nspath"]
+
+        namespace = {
+            "types": OrderedDict({type: 0}),
+            "%srefs" % type: [],
+            "symbols": {},
+        }
+
+        bodies = node.body and node.body.body
+        if bodies and not isinstance(bodies, list):
+            bodies = [bodies]
+
+        doc = None
+        if node.body:
+            leadingComments = node.leadingComments
+            if leadingComments:
+                doc = "/*%s*/" % "\n".join(d.value for d in leadingComments if d.value.startswith('*'))
+        jsdoc = JSDoc(doc) if doc else None
+        if jsdoc:
+            if jsdoc.doc:
+                namespace["doc"] = jsdoc.doc
+
+        namespace["declaration"] = namespace
+        namespace["line"] = node.loc.start.line
+        if bodies:
+            lastNode = bodies[-1]
+            namespace["lineend"] = lastNode.loc.end.line
+
+        name = None
+        if node._member or node._field:
+            if node._member:
+                name = node._member.property.name
+            else:  # if node._field:
+                name = node._field.name
+        if not name and node.id:
+            name = node.id.name
+        if not name and node.name:
+            name = node.name
+        if not name:
+            name = self._unique_id(type)
+
+        nspath = nspath + (name,)
+        namespace["nspath"] = nspath
+        namespace["name"] = name
+
+        # self.st[nspath] = namespace  # Objects don't add to the scope's symbol table
+        parent["symbols"][name] = namespace
+
+        attributes = []
+        namespace["attributes"] = attributes
+
+        if isExported and "is-exported" not in namespace:
+            namespace["is-exported"] = True
+
+        node._parent = parent
+        node._variable = namespace
+
+        return namespace
+
+    def visit_JSXElement(self, node):
+        log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
+        self._visitJSXElement(node)
+
+    def _visitJSXElement(self, node, isExported=False):
+        parent = self.nsstack[-1]
+
+        node.name = self._unique_id(node.openingElement.name.name)
+        namespace = self._createObject("object", parent, node, isExported)
+        namespace["objectrefs"] = [{"name": "Object", "types": OrderedDict({"Object": 1})}]
+
+        # Guess JSX element type:
+        for citdl in self._guessTypes(node.openingElement.name.name):
+            # ts = citdl.split(None, 1)
+            # ts[0] += "()"
+            # citdl = " ".join(ts)
+            if citdl not in namespace["types"]:
+                namespace["types"][citdl] = 0
+            namespace["types"][citdl] += 1
+
+        namespace["attributes"].append("__jsx__")
+
+        self.nsstack.append(namespace)
+
+        node.openingElement.name = "props"
+        props = self._createObject("object", namespace, node.openingElement, isExported)
+        props["types"]["Object()"] = 1
+        props["objectrefs"] = [{"name": "Object", "types": OrderedDict({"Object": 1})}]
+        self.nsstack.append(props)
+        self.visit(node.openingElement)
+        self.nsstack.pop()
+
+        if node.children:
+            for child in node.children:
+                self.visit(child)
+        if node.closingElement:
+            self.visit(node.closingElement)
+
+        self.nsstack.pop()
+
+        if isExported:
+            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
+            name = self._parseMemberExpression(namespace["name"], node.loc)
+            self._visitSimpleAssign(default, name, node.loc.start.line)
+
+    def visit_JSXAttribute(self, node):
+        log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
+        self._visitAssign(node.name, node.value, node.loc.start.line)
+
+    def visit_ExportAllDeclaration(self, node):
+        log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
+        if node.source.type is esprima.Syntax.Literal:
+            namespace = self.nsstack[0]
+            module = node.source.value
+            variable = {"name": "exports",
+                        "nspath": ("exports",),
+                        "types": OrderedDict({"require()": 0}),
+                        "required_library_name": module,
+                        "symbols": {},
+                        "attributes": [__LOCAL__],
+                        "line": node.loc.start.line}
+            namespace["symbols"]["exports"] = variable
+        self.generic_visit(node)
 
     def visit_ExportNamedDeclaration(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -640,96 +859,50 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             self.visit(node.declaration)
             declaration = node.declaration
         default = self._parseMemberExpression("exports.default", node.loc)
-        self._simpleAssign(default, declaration, node.loc.start.line)
+        self._visitSimpleAssign(default, declaration, node.loc.start.line)
 
     def visit_ObjectExpression(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
+        for prop in node.properties:
+            if prop.type is esprima.Syntax.Property and not prop.computed:
+                prop.value._member = esprima.nodes.StaticMemberExpression(prop.value, prop.key)
+                prop.value._member.loc = prop.value.loc
+
         self._visitObject(node)
 
     def _visitObject(self, node, isExported=False):
         parent = self.nsstack[-1]
-        nspath = parent["nspath"]
-
-        namespace = {
-            "types": OrderedDict({"object": 1}),
-            "objectrefs": [],
-            "symbols": {},
-        }
-
-        bodies = node.body and node.body.body
-        if bodies and not isinstance(bodies, list):
-            bodies = [bodies]
-
-        doc = None
-        if node.body:
-            leadingComments = node.leadingComments
-            if leadingComments:
-                doc = "/*%s*/" % "\n".join(d.value for d in leadingComments if d.value.startswith('*'))
-        jsdoc = JSDoc(doc) if doc else None
-        if jsdoc:
-            if jsdoc.doc:
-                namespace["doc"] = jsdoc.doc
-
-        namespace["declaration"] = namespace
-        namespace["line"] = node.loc.start.line
-        if bodies:
-            lastNode = bodies[-1]
-            namespace["lineend"] = lastNode.loc.end.line
-
-        name = None
-        if node._member or node._variable:
-            if node._member:
-                name = node._member.property.name
-                obj, citdl = self._resolveObjectRef(node._member.object)
-            else:  # if node._variable:
-                name = node._variable.name
-        if not name:
-            name = "____object_%s" % self.lambdas
-            self.lambdas += 1
-
-        nspath = nspath + (name,)
-        namespace["nspath"] = nspath
-        namespace["name"] = name
-
-        self.st[nspath] = parent["symbols"][name] = namespace
-
-        attributes = []
-        namespace["attributes"] = attributes
-
-        if isExported and "is-exported" not in namespace:
-            namespace["is-exported"] = True
+        namespace = self._createObject("object", parent, node, isExported)
+        namespace["types"]["Object()"] = 1
+        namespace["objectrefs"] = [{"name": "Object", "types": OrderedDict({"Object": 1})}]
 
         self.nsstack.append(namespace)
         self.generic_visit(node)
         self.nsstack.pop()
 
-        node._parent = parent
-        node._namespace = namespace
-
         if isExported:
-            default = self._parseMemberExpression("exports." + name, node.loc)
-            name = self._parseMemberExpression(name, node.loc)
-            self._simpleAssign(default, name, node.loc.start.line)
+            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
+            name = self._parseMemberExpression(namespace["name"], node.loc)
+            self._visitSimpleAssign(default, name, node.loc.start.line)
 
     def visit_Property(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
         self.generic_visit(node)
         if not node.computed:
-            self._simpleAssign(node.key, node.value, node.loc.start.line)
+            self._visitSimpleAssign(node.key, node.value, node.loc.start.line)
 
     def visit_SpreadElement(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
         self.generic_visit(node)
         namespace = self.nsstack[-1]
-        if _isobject(namespace):
-            baseNode = node.argument
-            baseName = self._getExprRepr(baseNode)
-            objectref = {"name": baseName, "types": OrderedDict()}
-            for t in self._guessTypes(baseNode):
-                if t not in objectref["types"]:
-                    objectref["types"][t] = 0
-                objectref["types"][t] += 1
-            namespace["objectrefs"].append(objectref)
+        baseNode = node.argument
+        baseName = self._getExprRepr(baseNode)
+        objectref = {"name": baseName, "types": OrderedDict()}
+        for t in self._guessTypes(baseNode):
+            if t not in objectref["types"]:
+                objectref["types"][t] = 0
+            objectref["types"][t] += 1
+        namespace["objectrefs"].append(objectref)
 
     def visit_ClassExpression(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -741,54 +914,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
     def _visitClass(self, node, isExported=False):
         parent = self.nsstack[-1]
-        nspath = parent["nspath"]
-
-        namespace = {
-            "types": OrderedDict({"class": 1}),
-            # XXX Example of a base class that might surprise: the
-            #    __metaclass__ class in
-            #    c:\python22\lib\site-packages\ctypes\com\automation.py
-            #    Should this be self._getCITDLExprRepr()???
-            "classrefs": [],
-            "symbols": {},
-        }
-
-        bodies = node.body and node.body.body
-        if bodies and not isinstance(bodies, list):
-            bodies = [bodies]
-
-        doc = None
-        if node.body:
-            leadingComments = node.leadingComments
-            if leadingComments:
-                doc = "/*%s*/" % "\n".join(d.value for d in leadingComments if d.value.startswith('*'))
-        jsdoc = JSDoc(doc) if doc else None
-        if jsdoc:
-            if jsdoc.doc:
-                namespace["doc"] = jsdoc.doc
-
-        namespace["declaration"] = namespace
-        namespace["line"] = node.loc.start.line
-        if bodies:
-            lastNode = bodies[-1]
-            namespace["lineend"] = lastNode.loc.end.line
-
-        name = None
-        if node._member or node._variable:
-            if node._member:
-                name = node._member.property.name
-                obj, citdl = self._resolveObjectRef(node._member.object)
-            else:  # if node._variable:
-                name = node._variable.name
-        if not name and node.id:
-            name = node.id.name
-        if not name:
-            name = "____class_%s" % self.lambdas
-            self.lambdas += 1
-
-        nspath = nspath + (name,)
-        namespace["nspath"] = nspath
-        namespace["name"] = name
+        namespace = self._createObject("class", parent, node, isExported)
+        self.st[namespace["nspath"]] = namespace
 
         baseNode = node.superClass
         if baseNode:
@@ -800,35 +927,50 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 classref["types"][t] += 1
             namespace["classrefs"].append(classref)
 
-        self.st[nspath] = parent["symbols"][name] = namespace
+        self.nsstack.append(namespace)
+        self.generic_visit(node)
+        self.nsstack.pop()
 
-        attributes = []
-        namespace["attributes"] = attributes
+        if isExported:
+            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
+            name = self._parseMemberExpression(namespace["name"], node.loc)
+            self._visitSimpleAssign(default, name, node.loc.start.line)
 
-        if isExported and "is-exported" not in namespace:
-            namespace["is-exported"] = True
+    def _visitInterface(self, node, isExported=False):
+        parent = self.nsstack[-1]
+        namespace = self._createObject("interface", parent, node, isExported)
+        self.st[namespace["nspath"]] = namespace
+
+        baseNode = node.superClass
+        if baseNode:
+            baseName = self._getExprRepr(baseNode)
+            classref = {"name": baseName, "types": OrderedDict()}
+            for t in self._guessTypes(baseNode):
+                if t not in classref["types"]:
+                    classref["types"][t] = 0
+                classref["types"][t] += 1
+            namespace["interfacerefs"].append(classref)
 
         self.nsstack.append(namespace)
         self.generic_visit(node)
         self.nsstack.pop()
 
-        node._parent = parent
-        node._namespace = namespace
-
         if isExported:
-            default = self._parseMemberExpression("exports." + name, node.loc)
-            name = self._parseMemberExpression(name, node.loc)
-            self._simpleAssign(default, name, node.loc.start.line)
+            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
+            name = self._parseMemberExpression(namespace["name"], node.loc)
+            self._visitSimpleAssign(default, name, node.loc.start.line)
 
     def visit_FieldDefinition(self, node):
         if node.value:
             node.value.static = node.static
-            self._simpleAssign(node.key, node.value, node.loc.start.line)
+            self._visitSimpleAssign(node.key, node.value, node.loc.start.line)
         else:
             self.generic_visit(node)
 
     def visit_MethodDefinition(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
+        if not node.value.leadingComments and node.leadingComments:
+            node.value.leadingComments = node.leadingComments
         node.value.static = node.static
         node.value.id = node.key
         self._visitFunction(node.value)
@@ -850,7 +992,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         nspath = parent["nspath"]
 
         namespace = {
-            "types": OrderedDict({"function": 1}),
+            "types": OrderedDict({"function": 0}),
             "returns": {},
             "arguments": [],
             "symbols": {},
@@ -870,7 +1012,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             if jsdoc.doc:
                 namespace["doc"] = jsdoc.doc
             if jsdoc.returns:
-                t = jsdoc.returns.paramtype
+                t = jsdoc.returns.type
                 if t not in namespace["returns"]:
                     namespace["returns"][t] = 0
                 namespace["returns"][t] += 1
@@ -882,24 +1024,19 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             namespace["lineend"] = lastNode.loc.end.line
 
         name = None
-        if node._member or node._variable:
+        if node._member or node._field:
             if node._member:
                 name = node._member.property.name
-                obj, citdl = self._resolveObjectRef(node._member.object)
-            else:  # if node._variable:
-                name = node._variable.name
+            else:  # if node._field:
+                name = node._field.name
         if not name and node.id:
             name = node.id.name
         if not name:
-            name = "____lambda_%s" % self.lambdas
-            self.lambdas += 1
+            name = self._unique_id("lambda")
 
         nspath = nspath + (name,)
         namespace["nspath"] = nspath
         namespace["name"] = name
-
-        if node._variable or node._member:
-            node._citdl = name
 
         parentIsClass = _isclass(parent)
 
@@ -909,6 +1046,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         # attributes.append("protected")
         if name == "constructor" and parentIsClass:
             attributes.append("__ctor__")
+            attributes.append("__staticmethod__")
 
         # process decorators
         if node.static:
@@ -990,10 +1128,9 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             arguments.append(argument)
             argDocs = jsdoc and jsdoc.params_dict.get(argName)
             if argDocs:
-                t = argDocs.paramtype
+                t = argDocs.type
                 if t not in argument["types"]:
                     argument["types"][t] = 0
-                argument["types"][t] += 1000
                 if argDocs.default:
                     argument["default"] = argDocs.default
                 argument["doc"] = argDocs.doc
@@ -1031,19 +1168,22 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         if "signature" not in namespace:
             namespace["signature"] = fallbackSig
 
-        self.st[nspath] = parent["symbols"][name] = namespace
+        self.st[nspath] = namespace
+        parent["symbols"][name] = namespace
+
+        node._parent = parent
+        node._variable = namespace
+        if node._field or node._member:
+            node._xxx = name
 
         self.nsstack.append(namespace)
         self.generic_visit(node)
         self.nsstack.pop()
 
-        node._parent = parent
-        node._namespace = namespace
-
         if "this" in namespace["symbols"]:
-            if node and node._member:
+            if node._member:
                 self._extractThis(namespace, parent)
-            elif node and node._variable:
+            elif node._field:
                 self._promoteToClass(namespace)
             # else:  # if name.id?
             #     self._promoteToClass(namespace)
@@ -1051,7 +1191,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         if isExported:
             default = self._parseMemberExpression("exports." + name, node.loc)
             name = self._parseMemberExpression(name, node.loc)
-            self._simpleAssign(default, name, node.loc.start.line)
+            self._visitSimpleAssign(default, name, node.loc.start.line)
 
     def visit_CallExpression(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -1059,38 +1199,50 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             callee, callee_type = self._resolveObjectRef(node.callee)
             if callee:
                 isRequire = "require" in callee["types"]
+                isInteropRequireDefault = "_interopRequireDefault" in callee["types"]
             else:
                 isRequire = node.callee.name == "require"
-            if isRequire:
-                module = None
+                isInteropRequireDefault = node.callee.name == "_interopRequireDefault"
+
+            if isRequire or isInteropRequireDefault:
                 argument = node.arguments[0]
                 typ = argument.type
+
                 if typ is esprima.Syntax.Literal:
-                    # Only handle static requires
                     module = argument.value
+                elif typ is esprima.Syntax.Identifier:
+                    module = argument.name
+                else:
+                    module = None
 
                 if module:
                     namespace = self.nsstack[-1]
 
                     name = None
-                    if node._member or node._variable:
+                    if node._member or node._field:
                         if node._member:
                             name = node._member.property.name
-                            obj, citdl = self._resolveObjectRef(node._member.object)
+                            obj, citdl = self._resolveObjectRef(node._member.object, spawn=False)
                             if obj:
                                 namespace = obj
-                            node._member._skip = True
-                        else:  # if node._variable:
-                            name = node._variable.name
-                            node._variable._skip = True
+                        else:  # if node._field:
+                            name = node._field.name
                     if not name:
                         name = "____require(%s)" % module
 
-                    imports = namespace.setdefault("imports", [])
-                    import_ = {"module": module}
-                    import_["line"] = node.loc.start.line
-                    import_["alias"] = name
-                    imports.append(import_)
+                    if typ is esprima.Syntax.Literal:
+                        imports = namespace.setdefault("imports", [])
+                        import_ = {"module": module}
+                        import_["line"] = node.loc.start.line
+                        import_["alias"] = name
+                        imports.append(import_)
+                        if node._member:
+                            node._member._required_library_name = module
+                        elif node._field:
+                            node._field._required_library_name = module
+
+                    elif isInteropRequireDefault:
+                        node._node = self._parseMemberExpression(module, node.loc)
 
         self.generic_visit(node)
 
@@ -1142,7 +1294,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         constructor["nspath"] = nspath + ("constructor",)
         constructor["declaration"] = variable
         variable.update({
-            "types": OrderedDict({"class": 1}),
+            "types": OrderedDict({"class": 0}),
             "classrefs": [],
             "symbols": {
                 "constructor": constructor,
@@ -1185,6 +1337,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
     def visit_StaticMemberExpression(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
+
+        # Pass assignment member to object
+        node.object._member = node._member
+        node.object._field = node._field
+
+        # Treat "prototype" case
         if node.property.name == "prototype":
             variable, citdl = self._resolveObjectRef(node.object)
             if variable:
@@ -1199,31 +1357,11 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         self.generic_visit(node)
 
-    def transform_VariableDeclaration(self, node, metadata):
-        log.info("transform_%s:%s: %r %r", node.__class__.__name__, metadata.start.line, self.lines and metadata.start.line and self.lines[metadata.start.line - 1], node.keys())
-        for declaration in node.declarations:
-            if declaration.init:
-                rhsNode = declaration.init
-                lhsNode = declaration.id
-                rhsNode._variable = lhsNode
-
-    def transform_AssignmentExpression(self, node, metadata):
-        log.info("transform_%s:%s: %r %r", node.__class__.__name__, metadata.start.line, self.lines and metadata.start.line and self.lines[metadata.start.line - 1], node.keys())
-        rhsNode = node.right
-        lhsNode = node.left
-        if lhsNode.type is esprima.Syntax.MemberExpression:
-            rhsNode._member = lhsNode
-        else:
-            rhsNode._variable = lhsNode
-
-    def transform_ObjectExpression(self, node, metadata):
-        log.info("transform_%s:%s: %r %r", node.__class__.__name__, metadata.start.line, self.lines and metadata.start.line and self.lines[metadata.start.line - 1], node.keys())
-        for prop in node.properties:
-            if prop.type is esprima.Syntax.Property and not prop.computed:
-                lhsNode = prop.key
-                rhsNode = prop.value
-                rhsNode._member = esprima.nodes.StaticMemberExpression(rhsNode, lhsNode)
-                rhsNode._member.loc = rhsNode.loc
+    def visit_ExpressionStatement(self, node):
+        log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
+        if not node.expression.leadingComments and node.leadingComments:
+            node.expression.leadingComments = node.leadingComments
+        self.generic_visit(node)
 
     def visit_VariableDeclaration(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -1232,19 +1370,23 @@ class AST2CIXVisitor(esprima.NodeVisitor):
     def _visitVariableDeclaration(self, node, isExported=None):
         # kind = node.kind  # var, let or const
         for declaration in node.declarations:
-            rhsNode = declaration.init
-            lhsNode = declaration.id
-            self._visitAssign(lhsNode, rhsNode, node.loc.start.line, isExported=isExported)
+            if declaration.init:
+                declaration.init._field = declaration.id
+            self._visitAssign(declaration.id, declaration.init, declaration.loc.start.line, isExported=isExported)
 
     def visit_AssignmentExpression(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
         self._visitAssignmentExpression(node)
 
     def _visitAssignmentExpression(self, node, isExported=None):
+        if node.left.type is esprima.Syntax.MemberExpression:
+            node.right._member = node.left
+        else:
+            node.right._field = node.left
+        if not node.right.leadingComments and node.leadingComments:
+            node.right.leadingComments = node.leadingComments
         if node.operator == '=':
-            rhsNode = node.right
-            lhsNode = node.left
-            self._visitAssign(lhsNode, rhsNode, node.loc.start.line, isExported=isExported)
+            self._visitAssign(node.left, node.right, node.loc.start.line, isExported=isExported)
         else:
             log.info("_visitAssignmentExpression:: skipping unknown operator: %r", node.operator)
             self.generic_visit(node)
@@ -1254,16 +1396,16 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         typ = getattr(lhsNode, 'type', type(lhsNode))
 
         self.visit(rhsNode)
-        if lhsNode._skip:
-            return
+        if rhsNode and rhsNode._node:
+            rhsNode = rhsNode._node
         self.visit(lhsNode)
 
-        if typ in (esprima.Syntax.Identifier, esprima.Syntax.MemberExpression):
+        if typ in (esprima.Syntax.Identifier, esprima.JSXSyntax.JSXIdentifier, esprima.Syntax.MemberExpression):
             # E.g.:
             #   foo = ...       (Identifier)
             #   foo.bar = ...   (MemberExpression)
             #   foo[1] = ...    (MemberExpression)
-            self._simpleAssign(lhsNode, rhsNode, lineno, isExported=isExported)
+            self._visitSimpleAssign(lhsNode, rhsNode, lineno, isExported=isExported)
 
         elif typ is esprima.Syntax.ArrayPattern:
             # E.g.:
@@ -1290,7 +1432,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 else:
                     log.info("visitAssign:: skipping unknown rhsNode type: %s", rtyp)
                     break
-                self._simpleAssign(left, right, lineno, isExported=isExported)
+                self._visitSimpleAssign(left, right, lineno, isExported=isExported)
 
         elif typ is esprima.Syntax.ObjectPattern:
             # E.g.:
@@ -1318,24 +1460,25 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 else:
                     log.info("visitAssign:: skipping unknown rhsNode type: %s", rtyp)
                     break
-                self._simpleAssign(left, right, lineno, isExported=isExported)
+                self._visitSimpleAssign(left, right, lineno, isExported=isExported)
 
         else:
             raise ESCILEError("unexpected type of LHS of assignment: %s" % typ)
 
-    def _simpleAssign(self, lhsNode, rhsNode, line, isExported=None):
+    def _visitSimpleAssign(self, lhsNode, rhsNode, line, isExported=None):
         """Handle a simple assignment: assignment to a symbol name or to
         an attribute of a symbol name. If the given left-hand side (lhsNode)
         is not an node type that can be handled, it is dropped.
         """
-        log.debug("_simpleAssign(lhsNode=%r, rhsNode=%r)", lhsNode, rhsNode)
+        log.debug("_visitSimpleAssign(lhsNode=%r, rhsNode=%r)", lhsNode, rhsNode)
         ns = self.nsstack[-1]
         typ = getattr(lhsNode, 'type', type(lhsNode))
-        if typ in (esprima.Syntax.Identifier, six.text_type):
+
+        if typ in (esprima.Syntax.Identifier, esprima.JSXSyntax.JSXIdentifier):
             # E.g.:  foo = ...
             # Assign this to the local namespace, unless there was a
             # 'global' statement. (XXX Not handling 'global' yet.)
-            varName = lhsNode.name if typ is esprima.Syntax.Identifier else lhsNode
+            varName = lhsNode.name
             self._assignVariable(varName, ns, rhsNode, line, isClassVar=_isclass(ns), isExported=isExported)
 
         elif typ is esprima.Syntax.MemberExpression:
@@ -1356,11 +1499,11 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                     lhsPrototype = lhsNode.object
 
             if lhsPrototype:
-                _citdl = rhsNode._citdl
-                rhsNode._citdl = None
-                if _citdl in ns["symbols"]:
-                    del self.st[ns["symbols"][_citdl]["nspath"]]
-                    del ns["symbols"][_citdl]
+                _xxx = rhsNode._xxx
+                rhsNode._xxx = None
+                if _xxx in ns["symbols"]:
+                    del self.st[ns["symbols"][_xxx]["nspath"]]
+                    del ns["symbols"][_xxx]
                 # Assignments to prototype work the same as if declared inside a class:
                 namespace, citdl = self._resolveObjectRef(lhsPrototype.object)
                 if namespace and isinstance(rhsNode, esprima.nodes.Node):
@@ -1398,11 +1541,17 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
                 if variable:
                     self._assignVariable(lhsNode.property.name, variable["declaration"], rhsNode, line, isExported=isExported)
-
         else:
             log.debug("could not handle simple assign (module '%s'): "
                       "lhsNode=%r, rhsNode=%r", self.moduleName, lhsNode,
                       rhsNode)
+            return
+
+        if lhsNode._required_library_name and rhsNode._assignee:
+            varTypes = rhsNode._assignee["types"]
+            if "require()" not in varTypes:
+                varTypes["require()"] = 0
+            rhsNode._assignee["required_library_name"] = lhsNode._required_library_name
 
     def _assignVariable(self, varName, namespace, rhsNode, line, isClassVar=False, isExported=None):
         """Handle a simple variable name assignment.
@@ -1421,15 +1570,15 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         variable = namespace["symbols"].get(varName, None)
 
         if variable is None:
-            if isinstance(rhsNode, esprima.nodes.Node) and rhsNode._citdl and rhsNode._parent:
-                variable = rhsNode._parent["symbols"].pop(rhsNode._citdl, None)
+            if rhsNode and rhsNode._xxx and rhsNode._parent:
+                variable = rhsNode._parent["symbols"].pop(rhsNode._xxx, None)
                 if variable is not None:
                     del self.st[variable["nspath"]]
                     variable["name"] = varName
                     variable["nspath"] = nspath + (varName,)
                     namespace["symbols"][varName] = variable
                     self.st[variable["nspath"]] = variable
-                    rhsNode._citdl = None
+                    rhsNode._xxx = None
 
                     if "function" in variable["types"] and "this" not in variable["symbols"]:
                         # If this is a class method, then add 'this' as a class instance variable.
@@ -1465,7 +1614,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         if line and "line" not in variable:
             variable["line"] = line
 
-        if isClassVar and "is-class-var" not in variable and (rhsNode.static is None or rhsNode.static):
+        if isClassVar and "is-class-var" not in variable and rhsNode and (rhsNode.static is None or rhsNode.static):
             variable["is-class-var"] = True
             # line number of first class-level assignment wins
             if line:
@@ -1477,31 +1626,37 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             if line:
                 variable["line"] = line
 
-        varTypes = variable["types"]
-        for t in self._guessTypes(rhsNode, namespace):
-            log.info("guessed type: %s ::= %s", varName, t)
-            if t not in varTypes:
-                varTypes[t] = 0
-            varTypes[t] += 1
+        if rhsNode:
+            rhsNode._parent = namespace
+            rhsNode._assignee = variable
 
-        if "this" in variable["symbols"]:
-            if rhsNode and rhsNode._member:
-                self._extractThis(variable, namespace)
-            elif rhsNode and rhsNode._variable:
-                self._promoteToClass(variable)
+            varTypes = variable["types"]
+            for t in self._guessTypes(rhsNode, namespace):
+                log.info("guessed type: %s ::= %s", varName, t)
+                if t not in varTypes:
+                    varTypes[t] = 0
+                varTypes[t] += 1
 
-        if isExported:
-            default = self._parseMemberExpression("exports." + varName, rhsNode.loc)
-            name = self._parseMemberExpression(varName, rhsNode.loc)
-            self._simpleAssign(default, name, rhsNode.loc.start.line)
+            if "this" in variable["symbols"]:
+                if rhsNode._member:
+                    self._extractThis(variable, namespace)
+                elif rhsNode._field:
+                    self._promoteToClass(variable)
+
+            if isExported:
+                default = self._parseMemberExpression("exports." + varName, rhsNode.loc)
+                name = self._parseMemberExpression(varName, rhsNode.loc)
+                self._visitSimpleAssign(default, name, rhsNode.loc.start.line)
+
+        return variable
 
     def _handleUnknownAssignment(self, lhsNode, rhsNode, lineno):
         typ = getattr(lhsNode, 'type', type(lhsNode))
-        if typ in (esprima.Syntax.Identifier, six.text_type):
-            self._simpleAssign(lhsNode, rhsNode, lineno)
+        if typ in (esprima.Syntax.Identifier, esprima.JSXSyntax.JSXIdentifier):
+            self._visitSimpleAssign(lhsNode, rhsNode, lineno)
         elif typ is esprima.Syntax.ArrayExpression:
             for anode in lhsNode.elements:
-                self._simpleAssign(anode, rhsNode, lineno)
+                self._visitSimpleAssign(anode, rhsNode, lineno)
 
     def visit_TryStatement(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -1510,11 +1665,11 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         if node.handler:
             self.visit(node.handler)
             if node.handler.param:
-                self._handleUnknownAssignment(node.handler.param.name, None, node.handler.loc.start.line)
+                self._handleUnknownAssignment(node.handler.param, None, node.handler.loc.start.line)
 
         self.visit(node.finalizer)
 
-    def _resolveObjectRef(self, expr):
+    def _resolveObjectRef(self, expr, spawn=True):
         """Try to resolve the given expression to a variable namespace.
 
             "expr" is some kind of Node instance.
@@ -1533,30 +1688,32 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         log.debug("_resolveObjectRef(expr=%r)", expr)
         typ = getattr(expr, 'type', type(expr))
 
-        if isinstance(expr, esprima.nodes.Node) and expr._citdl:
-            return (None, expr._citdl)
+        if isinstance(expr, esprima.nodes.Node):
+            if expr._variable is not None:
+                return (expr._variable, None)
 
-        elif typ in (esprima.Syntax.Identifier, esprima.Syntax.ThisExpression):
-            if typ is esprima.Syntax.Identifier:
-                name = expr.name
-                # module, module.exports and exports:
-                if name in ("module", "exports"):
+        if typ in (esprima.Syntax.Identifier, esprima.JSXSyntax.JSXIdentifier, esprima.Syntax.ThisExpression, six.text_type):
+            if typ is esprima.Syntax.ThisExpression:
+                name = "this"
+            else:  # if typ in (esprima.Syntax.Identifier, esprima.JSXSyntax.JSXIdentifier):
+                name = expr if typ is six.text_type else expr.name
+                # module, module.exports and exports auto-spawn:
+                if name in ("module", "exports") and spawn:
                     module = self.nsstack[0]
                     if "declaration" not in module:
                         module["declaration"] = module
                     if "exports" not in module["symbols"]:
                         exports = {"name": "exports",
                                    "nspath": ("exports",),
-                                   "types": OrderedDict(),
+                                   "types": OrderedDict({"object": 0, "Object()": 1}),
                                    "symbols": {},
-                                   "is-exported": True}
+                                   "attributes": [__LOCAL__],
+                                   "line": 0}
                         exports["declaration"] = exports
                         module["symbols"]["exports"] = exports
                     else:
                         exports = module["symbols"]["exports"]
                     return (exports if name == "exports" else module, None)
-            elif typ is esprima.Syntax.ThisExpression:
-                name = "this"
             nspath = self.nsstack[-1]["nspath"]
             for i in range(len(nspath), -1, -1):
                 if nspath[:i] in self.st:
@@ -1615,16 +1772,9 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         if typ is esprima.Syntax.Literal:
             ts = [self.get_type(expr)]
         elif typ is esprima.Syntax.ArrayExpression:
-            ts = ["[]"]
+            ts = ["Array()"]
         elif typ is esprima.Syntax.ObjectExpression:
-            variable = expr._namespace
-            if variable and not expr._variable:
-                if _isclass(variable) or _isfunction(variable) or _isobject(variable):
-                    ts = ['.'.join(variable["nspath"])]
-                else:
-                    ts = list(variable["types"].keys())
-            else:
-                ts = ["object"]
+            ts = ["Object()"]
         elif typ is esprima.Syntax.BinaryExpression:
             op = expr.operator
             if op in ("==", "===", "!=", "!==", "<", ">", ">=", "<=", "instanceof", "in"):
@@ -1651,11 +1801,11 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 ts = self._guessTypes(expr.argument)
             elif op == "typeof":
                 ts = ["String"]
-        elif typ in (esprima.Syntax.Identifier, esprima.Syntax.MemberExpression):
+        elif typ in (esprima.Syntax.Identifier, esprima.JSXSyntax.JSXIdentifier, esprima.Syntax.MemberExpression, six.text_type):
             variable, citdl = self._resolveObjectRef(expr)
             if variable:
-                if _isclass(variable) or _isfunction(variable) or _isobject(variable):
-                    ts = ['.'.join(variable["nspath"])]
+                if _isclass(variable) or _isinterface(variable) or _isfunction(variable) or _isobject(variable) or _isrequire(variable):
+                    ts = [".".join(variable["nspath"])]
                 else:
                     ts = list(variable["types"].keys())
             elif citdl:
@@ -1678,8 +1828,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                             scope_parts.pop(0)
                         else:
                             break
-                scope = '.'.join(scope_parts)
-                if _isclass(variable) or _isobject(variable):
+                scope = ".".join(scope_parts)
+                if _isinterface(variable) or _isobject(variable):
                     ts = [scope]
                 else:
                     ts = [scope + "()"]
@@ -1739,7 +1889,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         elif typ is esprima.Syntax.CallExpression:
             pass
         elif typ is esprima.Syntax.MemberExpression:
-            pass
+            s = "%s.%s" % (self._getExprRepr(node.object), node.property.name)
         elif typ is esprima.Syntax.UnaryExpression:
             op = node.operator
             sp = " " if op in ("delete", "void", "typeof") else ""
@@ -1748,184 +1898,184 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             op = node.operator
             s = "%s %s %s" % (self._getExprRepr(node.left), op, self._getExprRepr(node.right))
 
-        # --------
-        # elif isinstance(node, ast.Name):
-        #     s = node.id
-        # elif isinstance(node, ast.Num):
-        #     s = repr(node.n)
-        # elif isinstance(node, (ast.Str, ast_Bytes)):
-        #     s = self.string_repr(node.s)
-        # elif isinstance(node, ast.Attribute):
-        #     s = '.'.join([self._getExprRepr(node.value), node.attr])
-        # elif isinstance(node, ast.List):
-        #     items = [self._getExprRepr(c) for c in node.elts]
-        #     s = "[%s]" % ", ".join(items)
-        # elif isinstance(node, ast.Tuple):
-        #     items = [self._getExprRepr(c) for c in node.elts]
-        #     s = "(%s)" % ", ".join(items)
-        # elif isinstance(node, ast_Set):
-        #     items = [self._getExprRepr(c) for c in node.elts]
-        #     s = "{%s}" % ", ".join(items)
-        # elif isinstance(node, ast.Dict):
-        #     items = ["%s: %s" % (self._getExprRepr(k), self._getExprRepr(node.values[i]))
-        #              for i, k in enumerate(node.keys)]
-        #     s = "{%s}" % ", ".join(items)
-        elif isinstance(node, ast.Call):
-            s = self._getExprRepr(node.func)
-            s += "("
-            allargs = []
-            for arg in node.args:
-                if isinstance(arg, ast_Starred):  # Python 3.5 (Starred):
-                    allargs.append("*" + self._getExprRepr(arg.value))
-                else:
-                    allargs.append(self._getExprRepr(arg))
-            for keyword in node.keywords:
-                if keyword.arg:
-                    allargs.append("%s=%s" % (keyword.arg, self._getExprRepr(keyword.value)))
-                else:  # Python 3.5 (kwargs):
-                    allargs.append("**" + self._getExprRepr(keyword.value))
-            if getattr(node, 'starargs', None):
-                allargs.append("*" + self._getExprRepr(node.starargs))
-            if getattr(node, 'kwargs', None):
-                allargs.append("**" + self._getExprRepr(node.kwargs))
-            s += ",".join(allargs)
-            s += ")"
-        elif isinstance(node, ast.Subscript):
-            s = "[%s]" % self._getExprRepr(node.value)
-        elif isinstance(node, ast.Slice):
-            ast.dump(node)
-            s = self._getExprRepr(node.expr)
-            s += "["
-            if node.lower:
-                s += self._getExprRepr(node.lower)
-            s += ":"
-            if node.upper:
-                s += self._getExprRepr(node.upper)
-            if node.step:
-                s += ":"
-                s += self._getExprRepr(node.step)
-            s += "]"
-        # elif isinstance(node, ast.UnaryOp):
-        #     if isinstance(node.op, ast.USub):
-        #         s = "-" + self._getExprRepr(node.operand)
-        #     elif isinstance(node.op, ast.UAdd):
-        #         s = "+" + self._getExprRepr(node.operand)
-        #     elif isinstance(node.op, ast.Invert):
-        #         s = "~" + self._getExprRepr(node.operand)
-        #     elif isinstance(node.op, ast.Not):
-        #         s = "not " + self._getExprRepr(node.operand)
-        # elif isinstance(node, ast.BinOp):
+        # # --------
+        # # elif isinstance(node, ast.Name):
+        # #     s = node.id
+        # # elif isinstance(node, ast.Num):
+        # #     s = repr(node.n)
+        # # elif isinstance(node, (ast.Str, ast_Bytes)):
+        # #     s = self.string_repr(node.s)
+        # # elif isinstance(node, ast.Attribute):
+        # #     s = '.'.join([self._getExprRepr(node.value), node.attr])
+        # # elif isinstance(node, ast.List):
+        # #     items = [self._getExprRepr(c) for c in node.elts]
+        # #     s = "[%s]" % ", ".join(items)
+        # # elif isinstance(node, ast.Tuple):
+        # #     items = [self._getExprRepr(c) for c in node.elts]
+        # #     s = "(%s)" % ", ".join(items)
+        # # elif isinstance(node, ast_Set):
+        # #     items = [self._getExprRepr(c) for c in node.elts]
+        # #     s = "{%s}" % ", ".join(items)
+        # # elif isinstance(node, ast.Dict):
+        # #     items = ["%s: %s" % (self._getExprRepr(k), self._getExprRepr(node.values[i]))
+        # #              for i, k in enumerate(node.keys)]
+        # #     s = "{%s}" % ", ".join(items)
+        # elif isinstance(node, ast.Call):
+        #     s = self._getExprRepr(node.func)
+        #     s += "("
+        #     allargs = []
+        #     for arg in node.args:
+        #         if isinstance(arg, ast_Starred):  # Python 3.5 (Starred):
+        #             allargs.append("*" + self._getExprRepr(arg.value))
+        #         else:
+        #             allargs.append(self._getExprRepr(arg))
+        #     for keyword in node.keywords:
+        #         if keyword.arg:
+        #             allargs.append("%s=%s" % (keyword.arg, self._getExprRepr(keyword.value)))
+        #         else:  # Python 3.5 (kwargs):
+        #             allargs.append("**" + self._getExprRepr(keyword.value))
+        #     if getattr(node, 'starargs', None):
+        #         allargs.append("*" + self._getExprRepr(node.starargs))
+        #     if getattr(node, 'kwargs', None):
+        #         allargs.append("**" + self._getExprRepr(node.kwargs))
+        #     s += ",".join(allargs)
+        #     s += ")"
+        # elif isinstance(node, ast.Subscript):
+        #     s = "[%s]" % self._getExprRepr(node.value)
+        # elif isinstance(node, ast.Slice):
+        #     ast.dump(node)
+        #     s = self._getExprRepr(node.expr)
+        #     s += "["
+        #     if node.lower:
+        #         s += self._getExprRepr(node.lower)
+        #     s += ":"
+        #     if node.upper:
+        #         s += self._getExprRepr(node.upper)
+        #     if node.step:
+        #         s += ":"
+        #         s += self._getExprRepr(node.step)
+        #     s += "]"
+        # # elif isinstance(node, ast.UnaryOp):
+        # #     if isinstance(node.op, ast.USub):
+        # #         s = "-" + self._getExprRepr(node.operand)
+        # #     elif isinstance(node.op, ast.UAdd):
+        # #         s = "+" + self._getExprRepr(node.operand)
+        # #     elif isinstance(node.op, ast.Invert):
+        # #         s = "~" + self._getExprRepr(node.operand)
+        # #     elif isinstance(node.op, ast.Not):
+        # #         s = "not " + self._getExprRepr(node.operand)
+        # # elif isinstance(node, ast.BinOp):
+        # #     ops = {
+        # #         ast.Add: "+",
+        # #         ast.Sub: "-",
+        # #         ast.Mult: "*",
+        # #         ast.Div: "/",
+        # #         ast.Mod: "%",
+        # #         ast.Pow: "**",
+        # #         ast.LShift: "<<",
+        # #         ast.RShift: ">>",
+        # #         ast.BitOr: "|",
+        # #         ast.BitXor: "^",
+        # #         ast.BitAnd: "&",
+        # #         ast.FloorDiv: "//",
+        # #     }
+        # #     node_op_type = type(node.op)
+        # #     if node_op_type in ops:
+        # #         s = self._getExprRepr(node.left) + ops[node_op_type] + self._getExprRepr(node.right)
+        # elif isinstance(node, ast.Assign):
+        #     for target in node.targets:
+        #         s = self._getExprRepr(node.target) + "=" + self._getExprRepr(node.value)
+        # elif isinstance(node, ast.AugAssign):
         #     ops = {
-        #         ast.Add: "+",
-        #         ast.Sub: "-",
-        #         ast.Mult: "*",
-        #         ast.Div: "/",
-        #         ast.Mod: "%",
-        #         ast.Pow: "**",
-        #         ast.LShift: "<<",
-        #         ast.RShift: ">>",
-        #         ast.BitOr: "|",
-        #         ast.BitXor: "^",
-        #         ast.BitAnd: "&",
-        #         ast.FloorDiv: "//",
+        #         ast.Add: "+=",
+        #         ast.Sub: "-=",
+        #         ast.Mult: "*=",
+        #         ast.Div: "/=",
+        #         ast.Mod: "%=",
+        #         ast.Pow: "**=",
+        #         ast.LShift: "<<=",
+        #         ast.RShift: ">>=",
+        #         ast.BitOr: "|=",
+        #         ast.BitXor: "^=",
+        #         ast.BitAnd: "&=",
+        #         ast.FloorDiv: "//=",
         #     }
         #     node_op_type = type(node.op)
         #     if node_op_type in ops:
-        #         s = self._getExprRepr(node.left) + ops[node_op_type] + self._getExprRepr(node.right)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                s = self._getExprRepr(node.target) + "=" + self._getExprRepr(node.value)
-        elif isinstance(node, ast.AugAssign):
-            ops = {
-                ast.Add: "+=",
-                ast.Sub: "-=",
-                ast.Mult: "*=",
-                ast.Div: "/=",
-                ast.Mod: "%=",
-                ast.Pow: "**=",
-                ast.LShift: "<<=",
-                ast.RShift: ">>=",
-                ast.BitOr: "|=",
-                ast.BitXor: "^=",
-                ast.BitAnd: "&=",
-                ast.FloorDiv: "//=",
-            }
-            node_op_type = type(node.op)
-            if node_op_type in ops:
-                s = self._getExprRepr(node.target) + ops[node_op_type] + self._getExprRepr(node.value)
-        # elif isinstance(node, ast.BinOp):
-        #     if isinstance(node.op, ast.BitOr):
-        #         creprs = []
-        #         for cnode in [node.left, node.right]:
-        #             if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
-        #                 crepr = self._getExprRepr(cnode)
-        #             else:
-        #                 crepr = "(%s)" % self._getExprRepr(cnode)
-        #             creprs.append(crepr)
-        #         s = "|".join(creprs)
-        #     elif isinstance(node.op, ast.BitAnd):
-        #         creprs = []
-        #         for cnode in [node.left, node.right]:
-        #             if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
-        #                 crepr = self._getExprRepr(cnode)
-        #             else:
-        #                 crepr = "(%s)" % self._getExprRepr(cnode)
-        #             creprs.append(crepr)
-        #         s = "&".join(creprs)
-        #     elif isinstance(node.op, ast.BitXor):
-        #         creprs = []
-        #         for cnode in [node.left, node.right]:
-        #             if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
-        #                 crepr = self._getExprRepr(cnode)
-        #             else:
-        #                 crepr = "(%s)" % self._getExprRepr(cnode)
-        #             creprs.append(crepr)
-        #         s = "^".join(creprs)
-        elif isinstance(node, ast.Lambda):
-            s = "lambda"
-            # Handle arguments. The format of the relevant Function attributes
-            # makes this a little bit of pain.
-            node_args = node.args
-            defaultArgsBaseIndex = len(node_args.args) - len(node_args.defaults)
-            if node_args.kwarg:
-                defaultArgsBaseIndex -= 1
-                if node_args.vararg:
-                    defaultArgsBaseIndex -= 1
-                    varargsIndex = len(node_args.args) - 2
-                else:
-                    varargsIndex = None
-                kwargsIndex = len(node_args.args) - 1
-            elif node_args.vararg:
-                defaultArgsBaseIndex -= 1
-                varargsIndex = len(node_args.args) - 1
-                kwargsIndex = None
-            else:
-                varargsIndex = kwargsIndex = None
-            sigArgs = []
-            for i, node_arg in enumerate(node_args.args):
-                argName = node_arg.arg if six.PY3 else node_arg.id
-                if i == kwargsIndex:
-                    sigArgs.append("**" + argName)
-                elif i == varargsIndex:
-                    sigArgs.append("*" + argName)
-                elif i >= defaultArgsBaseIndex:
-                    defaultNode = node_args.defaults[i - defaultArgsBaseIndex]
-                    try:
-                        sigArgs.append(argName + "=" + self._getExprRepr(defaultNode))
-                    except ESCILEError:
-                        # XXX Work around some trouble cases.
-                        sigArgs.append(argName + "=...")
-                else:
-                    sigArgs.append(argName)
-            if sigArgs:
-                s += " " + ",".join(sigArgs)
-            try:
-                s += ": " + self._getExprRepr(node.body)
-            except ESCILEError:
-                # XXX Work around some trouble cases.
-                s += ":..."
-        elif isinstance(node, ast_NameConstant):
-            return repr(node.value)
+        #         s = self._getExprRepr(node.target) + ops[node_op_type] + self._getExprRepr(node.value)
+        # # elif isinstance(node, ast.BinOp):
+        # #     if isinstance(node.op, ast.BitOr):
+        # #         creprs = []
+        # #         for cnode in [node.left, node.right]:
+        # #             if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
+        # #                 crepr = self._getExprRepr(cnode)
+        # #             else:
+        # #                 crepr = "(%s)" % self._getExprRepr(cnode)
+        # #             creprs.append(crepr)
+        # #         s = "|".join(creprs)
+        # #     elif isinstance(node.op, ast.BitAnd):
+        # #         creprs = []
+        # #         for cnode in [node.left, node.right]:
+        # #             if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
+        # #                 crepr = self._getExprRepr(cnode)
+        # #             else:
+        # #                 crepr = "(%s)" % self._getExprRepr(cnode)
+        # #             creprs.append(crepr)
+        # #         s = "&".join(creprs)
+        # #     elif isinstance(node.op, ast.BitXor):
+        # #         creprs = []
+        # #         for cnode in [node.left, node.right]:
+        # #             if isinstance(cnode, (ast.Num, ast.Str, ast_Bytes)):
+        # #                 crepr = self._getExprRepr(cnode)
+        # #             else:
+        # #                 crepr = "(%s)" % self._getExprRepr(cnode)
+        # #             creprs.append(crepr)
+        # #         s = "^".join(creprs)
+        # elif isinstance(node, ast.Lambda):
+        #     s = "lambda"
+        #     # Handle arguments. The format of the relevant Function attributes
+        #     # makes this a little bit of pain.
+        #     node_args = node.args
+        #     defaultArgsBaseIndex = len(node_args.args) - len(node_args.defaults)
+        #     if node_args.kwarg:
+        #         defaultArgsBaseIndex -= 1
+        #         if node_args.vararg:
+        #             defaultArgsBaseIndex -= 1
+        #             varargsIndex = len(node_args.args) - 2
+        #         else:
+        #             varargsIndex = None
+        #         kwargsIndex = len(node_args.args) - 1
+        #     elif node_args.vararg:
+        #         defaultArgsBaseIndex -= 1
+        #         varargsIndex = len(node_args.args) - 1
+        #         kwargsIndex = None
+        #     else:
+        #         varargsIndex = kwargsIndex = None
+        #     sigArgs = []
+        #     for i, node_arg in enumerate(node_args.args):
+        #         argName = node_arg.arg if six.PY3 else node_arg.id
+        #         if i == kwargsIndex:
+        #             sigArgs.append("**" + argName)
+        #         elif i == varargsIndex:
+        #             sigArgs.append("*" + argName)
+        #         elif i >= defaultArgsBaseIndex:
+        #             defaultNode = node_args.defaults[i - defaultArgsBaseIndex]
+        #             try:
+        #                 sigArgs.append(argName + "=" + self._getExprRepr(defaultNode))
+        #             except ESCILEError:
+        #                 # XXX Work around some trouble cases.
+        #                 sigArgs.append(argName + "=...")
+        #         else:
+        #             sigArgs.append(argName)
+        #     if sigArgs:
+        #         s += " " + ",".join(sigArgs)
+        #     try:
+        #         s += ": " + self._getExprRepr(node.body)
+        #     except ESCILEError:
+        #         # XXX Work around some trouble cases.
+        #         s += ":..."
+        # elif isinstance(node, ast_NameConstant):
+        #     return repr(node.value)
         if s is None:
             raise ESCILEError("don't know how to get string repr of expression: %r" % node)
         return s
@@ -1941,14 +2091,16 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         """
         s = None
         typ = getattr(node, 'type', type(node))
-        if typ is esprima.Syntax.Identifier:
+        if typ is six.text_type:
+            s = node
+        elif typ is esprima.Syntax.Identifier:
             s = node.name
         elif typ is esprima.Syntax.Literal:
             s = self.get_repr(node)
         elif typ is esprima.Syntax.ArrayExpression:
-            s = "[]"
+            s = "Array()"
         elif typ is esprima.Syntax.ObjectExpression:
-            s = "object"
+            s = "Object()"
         elif typ is esprima.Syntax.MemberExpression:
             exprRepr = self._getCITDLExprRepr(node.object, _level + 1)
             if exprRepr is None:
@@ -1986,7 +2138,7 @@ def _quietCompilerParse(content, **kwargs):
 
 
 def _getAST(convertor, content, f, **kwargs):
-    """Return an AST for the given ES content.
+    """Return an AST for the given ECMAScript content.
 
     If cannot, raise an error describing the problem.
     """
@@ -2012,19 +2164,12 @@ def _getAST(convertor, content, f, **kwargs):
 
     if errlineno is not None:
         # There was a syntax error at this line: try to recover by effectively
-        # nulling out the offending line.
-        lines = content.splitlines(1)
+        # nulling out the offending line or the previous.
+        lines = content.splitlines(True) + [""]
         offender = lines[errlineno - 1]
-        log.info("syntax error on line %d: %r: trying to recover",
-                 errlineno, offender)
-        indent = ''
-        for i in range(0, len(offender)):
-            if offender[i] in " \t":
-                indent += offender[i]
-            else:
-                break
-        lines[errlineno - 1] = indent + ";" + "\n"
-        newContent = ''.join(lines)
+        log.info("syntax error on line %d: %r: trying to recover", errlineno, offender)
+        lines[errlineno - 1] = ";" + ("\n" if offender.endswith("\n") else "")
+        newContent = "".join(lines)
 
         errlineno2 = None
         try:
@@ -2036,8 +2181,23 @@ def _getAST(convertor, content, f, **kwargs):
         if ast_ is not None:
             pass
         elif errlineno2 == errlineno:
-            raise ValueError("cannot recover from syntax error: line %d"
-                             % errlineno)
+            if errlineno > 1:
+                lines[errlineno - 1] = offender
+                lines[errlineno - 2] = ";\n"
+                newContent = "".join(lines)
+
+                try:
+                    ast_ = _quietCompilerParse(newContent, **kwargs)
+                except esprima.Error as ex:
+                    log.debug("compiler parse #3: syntax error on line %d: %s", errlineno, ex)
+                if ast_ is not None:
+                    pass
+                else:
+                    raise ValueError("cannot recover from syntax error: line %d"
+                                    % errlineno)
+            else:
+                raise ValueError("cannot recover from syntax error: line %d"
+                                % errlineno)
         else:
             raise ValueError("cannot recover from multiple syntax errors: "
                              "line %d and then %d" % (errlineno, errlineno2))
@@ -2050,14 +2210,14 @@ def _getAST(convertor, content, f, **kwargs):
 
 # ---- public module interface
 
-def scan_cix(content, filename, md5sum=None, mtime=None, lang="ES", traceback=False):
-    """Scan the given ES content and return Code Intelligence data
+def scan_cix(content, filename, md5sum=None, mtime=None, lang="ECMAScript", traceback=False):
+    """Scan the given ECMAScript content and return Code Intelligence data
     conforming the the Code Intelligence XML format.
 
-        "content" is the ES content to scan. This should be an
+        "content" is the ECMAScript content to scan. This should be an
             encoded string: must be a string for `md5` and
             `esprima.parse` -- see bug 73461.
-        "filename" is the source of the ES content (used in the
+        "filename" is the source of the ECMAScript content (used in the
             generated output).
         "md5sum" (optional) if the MD5 hexdigest has already been calculated
             for the content, it can be passed in here. Otherwise this
@@ -2067,15 +2227,15 @@ def scan_cix(content, filename, md5sum=None, mtime=None, lang="ES", traceback=Fa
             Note that the default is not to stat() the file and use that
             because the given content might not reflect the saved file state.
         "lang" (optional) is the language of the given file content.
-            Typically this is "ES" (i.e. a pure ES file), but it
-            may also be "DjangoHTML" or similar for ES embedded in
+            Typically this is "ECMAScript" (i.e. a pure ECMAScript file), but it
+            may also be "DjangoHTML" or similar for ECMAScript embedded in
             other documents.
         XXX Add an optional 'eoltype' so that it need not be
             re-calculated if already known.
 
     This can raise one of esprima.Error or ESCILEError
     if there was an error processing. Currently this implementation uses the
-    ES 'compiler' package for processing, therefore the given ES
+    ECMAScript 'compiler' package for processing, therefore the given ECMAScript
     content must be syntactically correct.
     """
     codeintel = scan_et(content, filename, md5sum, mtime, lang, traceback)
@@ -2091,14 +2251,14 @@ def scan_cix(content, filename, md5sum=None, mtime=None, lang="ES", traceback=Fa
     return cix
 
 
-def scan_et(content, filename, md5sum=None, mtime=None, lang="ES", traceback=False):
-    """Scan the given ES content and return Code Intelligence data
+def scan_et(content, filename, md5sum=None, mtime=None, lang="ECMAScript", traceback=False):
+    """Scan the given ECMAScript content and return Code Intelligence data
     conforming the the Code Intelligence XML format.
 
-        "content" is the ES content to scan. This should be an
+        "content" is the ECMAScript content to scan. This should be an
             encoded string: must be a string for `md5` and
             `esprima.parse` -- see bug 73461.
-        "filename" is the source of the ES content (used in the
+        "filename" is the source of the ECMAScript content (used in the
             generated output).
         "md5sum" (optional) if the MD5 hexdigest has already been calculated
             for the content, it can be passed in here. Otherwise this
@@ -2108,15 +2268,15 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="ES", traceback=Fal
             Note that the default is not to stat() the file and use that
             because the given content might not reflect the saved file state.
         "lang" (optional) is the language of the given file content.
-            Typically this is "ES" (i.e. a pure ES file), but it
-            may also be "DjangoHTML" or similar for ES embedded in
+            Typically this is "ECMAScript" (i.e. a pure ECMAScript file), but it
+            may also be "DjangoHTML" or similar for ECMAScript embedded in
             other documents.
         XXX Add an optional 'eoltype' so that it need not be
             re-calculated if already known.
 
     This can raise one of esprima.Error or ESCILEError
     if there was an error processing. Currently this implementation uses the
-    ES 'compiler' package for processing, therefore the given ES
+    ECMAScript 'compiler' package for processing, therefore the given ECMAScript
     content must be syntactically correct.
     """
     global _gStartTime
@@ -2129,9 +2289,8 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="ES", traceback=Fal
     if mtime is None:
         mtime = int(time.time())
 
-    # 'compiler' both (1) wants a newline at the end and (2) can fail on
-    # funky *whitespace* at the end of the file.
-    content = content.rstrip() + '\n'
+    # parsing could fail on funky *whitespace* at the end of the file.
+    content = content.rstrip()
 
     # The 'path' attribute must use normalized dir separators.
     if sys.platform.startswith("win"):
@@ -2196,13 +2355,13 @@ def main(argv):
              "clock", "language=", "traceback"])
     except getopt.GetoptError as ex:
         log.error(str(ex))
-        log.error("Try `escile --help'.")
+        log.error("Try `ecmacile --help'.")
         return 1
     numVerboses = 0
     stdinFilename = None
     md5sum = None
     mtime = None
-    lang = "ES"
+    lang = "ECMAScript"
     traceback = False
     global _gClockIt
     for opt, optarg in opts:
@@ -2211,7 +2370,7 @@ def main(argv):
             return
         elif opt in ("-V", "--version"):
             ver = '.'.join([str(part) for part in _version_])
-            print("escile %s" % ver)
+            print("ecmacile %s" % ver)
             return
         elif opt in ("-v", "--verbose"):
             numVerboses += 1

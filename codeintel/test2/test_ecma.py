@@ -35,7 +35,7 @@
 #
 # ***** END LICENSE BLOCK *****
 
-"""Test some ES-specific codeintel handling."""
+"""Test some ECMAScript-specific codeintel handling."""
 
 from __future__ import absolute_import
 import os
@@ -53,7 +53,7 @@ log = logging.getLogger("test")
 
 
 class DefnTestCase(CodeIntelTestCase):
-    lang = "ES"
+    lang = "ECMAScript"
     test_dir = join(os.getcwd(), "tmp")
 
     def test_simple(self):

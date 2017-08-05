@@ -468,6 +468,10 @@ class Driver(threading.Thread):
                   command="report-error",
                   message=six.text_type(message))
 
+    def finalize(self, timeout=None):
+        self.do_quit(None)
+        self.mgr.finalize()
+
     def start(self):
         """Start reading from the socket and dump requests into the queue"""
         log.info("Running codeintel driver...")
@@ -529,7 +533,7 @@ class Driver(threading.Thread):
         log.info("Running codeintel eval thread...")
         log.debug("default supported commands: %s",
                   ", ".join(self._default_handler.supportedCommands))
-        while True:
+        while not self.quit:
             with self.queue_cv:
                 try:
                     request = self.queue.pop()

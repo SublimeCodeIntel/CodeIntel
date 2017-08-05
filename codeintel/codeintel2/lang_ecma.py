@@ -35,7 +35,7 @@
 #
 # ***** END LICENSE BLOCK *****
 
-"""ES support for CodeIntel"""
+"""ECMAScript support for CodeIntel"""
 
 from __future__ import absolute_import
 from __future__ import print_function
@@ -49,22 +49,23 @@ import weakref
 import re
 from pprint import pformat
 import json
+import bisect
 
-import SilverCity
-from SilverCity.Lexer import Lexer
 from SilverCity import ScintillaConstants
 
 from codeintel2.common import (_xpcom_, CILEDriver, Evaluator,
                                CodeIntelError, LazyClassAttribute,
                                Trigger, TRG_FORM_CPLN, TRG_FORM_DEFN, TRG_FORM_CALLTIP)
-from codeintel2.citadel import CitadelBuffer, ImportHandler, CitadelLangIntel
+from codeintel2.citadel import ImportHandler, CitadelLangIntel
 from codeintel2.indexer import PreloadLibRequest
-from codeintel2 import escile
+from codeintel2 import ecmacile
 from codeintel2.util import indent, isident, isdigit, makePerformantLogger
-from codeintel2.tree_es import ESTreeEvaluator, ESImportLibGenerator
+from codeintel2.tree_ecma import ECMAScriptTreeEvaluator, ECMAScriptImportLibGenerator
 from codeintel2.langintel import (ParenStyleCalltipIntelMixin,
                                   ProgLangTriggerIntelMixin,
                                   PythonCITDLExtractorMixin)
+from codeintel2.jsdoc import jsdoc_tags
+from codeintel2.udl import UDLLexer, XMLParsingBufferMixin, styles
 
 if _xpcom_:
     from xpcom.server import UnwrapObject
@@ -74,130 +75,25 @@ if _xpcom_:
 
 _SCAN_BINARY_FILES = False
 
-lang = "ES"
-log = logging.getLogger("codeintel.es")
+lang = "ECMAScript"
+log = logging.getLogger("codeintel.ecmascript")
 log.setLevel(logging.DEBUG)
 makePerformantLogger(log)
 
-# See http://effbot.org/zone/pythondoc.htm
-_g_pythondoc_tags = list(sorted("param keyparam return exception def "
-                                "defreturn see link linkplain".split()))
-
-_g_es_magic_method_names = sorted([
-    '__init__',
-    '__new__',
-    '__del__',
-    '__repr__',
-    '__str__',
-    '__lt__',
-    '__le__',
-    '__eq__',
-    '__ne__',
-    '__gt__',
-    '__ge__',
-    '__cmp__',
-    '__rcmp__',
-    '__hash__',
-    '__nonzero__',
-    '__unicode__',
-    # Attribute access
-    '__getattr__',
-    '__setattr__',
-    '__delattr__',
-    # New style classes
-    '__getattribute__',
-    '__call__',
-    # Sequence classes
-    '__len__',
-    '__getitem__',
-    '__setitem__',
-    '__delitem__',
-    '__iter__',
-    '__reversed__',
-    '__contains__',
-    '__getslice__',
-    '__setslice__',
-    '__delslice__',
-    # Integer like operators
-    '__add__',
-    '__sub__',
-    '__mul__',
-    '__floordiv__',
-    '__mod__',
-    '__divmod__',
-    '__pow__',
-    '__lshift__',
-    '__rshift__',
-    '__and__',
-    '__xor__',
-    '__or__',
-    '__div__',
-    '__truediv__',
-    '__radd__',
-    '__rsub__',
-    '__rmul__',
-    '__rdiv__',
-    '__rtruediv__',
-    '__rfloordiv__',
-    '__rmod__',
-    '__rdivmod__',
-    '__rpow__',
-    '__rlshift__',
-    '__rrshift__',
-    '__rand__',
-    '__rxor__',
-    '__ror__',
-    '__iadd__',
-    '__isub__',
-    '__imul__',
-    '__idiv__',
-    '__itruediv__',
-    '__ifloordiv__',
-    '__imod__',
-    '__ipow__',
-    '__ilshift__',
-    '__irshift__',
-    '__iand__',
-    '__ixor__',
-    '__ior__',
-    '__neg__',
-    '__pos__',
-    '__abs__',
-    '__invert__',
-    '__complex__',
-    '__int__',
-    '__long__',
-    '__float__',
-    '__oct__',
-    '__hex__',
-    '__index__',
-    '__coerce__',
-    # Context managers
-    '__enter__',
-    '__exit__',
-])
+_g_jsdoc_cplns = [("variable", t) for t in sorted(jsdoc_tags)]
 
 
 # ---- language support
 
-class ESLexer(Lexer):
-    lang = lang
-
-    def __init__(self, mgr):
-        self._properties = SilverCity.PropertySet()
-        self._lexer = SilverCity.find_lexer_module_by_id(ScintillaConstants.SCLEX_CPP)
-        jsli = mgr.lidb.langinfo_from_lang(self.lang)
-        self._keyword_lists = [
-            SilverCity.WordList(' '.join(jsli.keywords)),
-            SilverCity.WordList(""),  # hilighted identifiers
-        ]
+class ECMAScriptLexer(UDLLexer):
+    lang = "JSX"  # Use JSX UDL lexer
 
 
-class ESImportsEvaluator(Evaluator):
+class ECMAScriptImportsEvaluator(Evaluator):
     lang = lang
 
     def __str__(self):
-        return "ES imports"
+        return "ECMAScript imports"
 
     def eval(self, mgr):
         try:
@@ -219,8 +115,8 @@ class ESImportsEvaluator(Evaluator):
                     # This is a smart import facility - to detect imports from
                     # a parent directory when they are not explicitly on the
                     # included path list, quite common for Django and other
-                    # ES frameworks that mangle the sys.path at runtime.
-                    libs = ESImportLibGenerator(mgr, self.lang, self.buf.path, imp_prefix, libs)
+                    # ECMAScript frameworks that mangle the sys.path at runtime.
+                    libs = ECMAScriptImportLibGenerator(mgr, self.lang, self.buf.path, imp_prefix, libs)
                 self.ctlr.set_desc("subimports of '%s'" % '.'.join(imp_prefix))
                 cplns = []
                 for lib in libs:
@@ -267,7 +163,7 @@ class ESImportsEvaluator(Evaluator):
             self.ctlr.done("success")
 
     # XXX: This function is shamelessly copy/pasted from
-    #     tree_python.py:ESTreeEvaluator because there was no clear
+    #     tree_ecma.py:ECMAScriptTreeEvaluator because there was no clear
     #     way to reuse this shared functionality. See another XXX below, though.
     def _members_from_elem(self, elem, mgr):
         """Return the appropriate set of autocomplete completions for
@@ -299,7 +195,7 @@ class ESImportsEvaluator(Evaluator):
                     # To correctly determine the type, we'd need to
                     # examine all the imports of this blob, and then see
                     # if any of those imports match the name... which is
-                    # better left to the tree evaluator (tree_es).
+                    # better left to the tree evaluator (tree_ecma).
                     #
                     # For now, we just add it as an unknown type.
                     members.add(('unknown', alias or symbol_name))
@@ -313,10 +209,10 @@ class ESImportsEvaluator(Evaluator):
         return members
 
 
-class ESLangIntel(CitadelLangIntel,
-                  ParenStyleCalltipIntelMixin,
-                  ProgLangTriggerIntelMixin,
-                  PythonCITDLExtractorMixin):
+class ECMAScriptLangIntel(CitadelLangIntel,
+                          ParenStyleCalltipIntelMixin,
+                          ProgLangTriggerIntelMixin,
+                          PythonCITDLExtractorMixin):
     lang = lang
     interpreterPrefName = "node"
     extraPathsPrefName = "esExtraPaths"
@@ -333,14 +229,35 @@ class ESLangIntel(CitadelLangIntel,
         from SilverCity.Keywords import python_keywords
         return python_keywords.split(" ")
 
+    def citdl_expr_from_trg(self, buf, trg):
+        citdl_expr = super(ECMAScriptLangIntel, self).citdl_expr_from_trg(buf, trg)
+        citdl_expr = citdl_expr.lstrip('.')  # Remove leading dots from spreads
+        return citdl_expr
+
     def async_eval_at_trg(self, buf, trg, ctlr):
         if _xpcom_:
             trg = UnwrapObject(trg)
             ctlr = UnwrapObject(ctlr)
         ctlr.start(buf, trg)
-        if trg.type in ("object-members", "call-signature",
-                        "literal-members") or \
-           trg.form == TRG_FORM_DEFN:
+
+        # JSDoc completions
+        if trg.id == (self.lang, TRG_FORM_CPLN, "jsdoc-tags"):
+            # TODO: Would like a "javadoc tag" completion image name.
+            ctlr.set_cplns(_g_jsdoc_cplns)
+            ctlr.done("success")
+
+        # JSDoc calltip
+        elif trg.id == (self.lang, TRG_FORM_CALLTIP, "jsdoc-tags"):
+            # TODO: Would like a "javadoc tag" completion image name.
+            jsdoc_field = trg.extra.get("jsdoc_field")
+            if jsdoc_field:
+                # print("jsdoc_field: %r" % (jsdoc_field, ))
+                calltip = jsdoc_tags.get(jsdoc_field)
+                if calltip:
+                    ctlr.set_calltips([calltip])
+            ctlr.done("success")
+
+        elif trg.type in ("object-members", "object-properties", "call-signature", "literal-members") or trg.form == TRG_FORM_DEFN:
             line = buf.accessor.line_from_pos(trg.pos)
             if trg.type == "literal-members":
                 # We could leave this to citdl_expr_from_trg, but this is a
@@ -353,48 +270,26 @@ class ESLangIntel(CitadelLangIntel,
                     ctlr.error(str(ex))
                     ctlr.done("error")
                     return
-            evalr = ESTreeEvaluator(ctlr, buf, trg, citdl_expr, line)
+            evalr = ECMAScriptTreeEvaluator(ctlr, buf, trg, citdl_expr, line)
             buf.mgr.request_eval(evalr)
+
         elif trg.id == (self.lang, TRG_FORM_CPLN, "local-symbols"):
             line = buf.accessor.line_from_pos(trg.pos)
             citdl_expr = trg.extra.get("citdl_expr")
-            evalr = ESTreeEvaluator(ctlr, buf, trg, citdl_expr, line)
+            evalr = ECMAScriptTreeEvaluator(ctlr, buf, trg, citdl_expr, line)
             buf.mgr.request_eval(evalr)
-        elif trg.id == (self.lang, TRG_FORM_CPLN, "magic-symbols"):
-            symbolstype = trg.extra.get("symbolstype")
-            cplns = []
-            if symbolstype == "string":
-                cplns = [("variable", "__main__")]
-            elif symbolstype == "def":
-                posttext = trg.extra.get("posttext", "")
-                posttext = posttext.split("\n", 1)[0]
-                if posttext and "(" in posttext:
-                    cplns = [("function", t) for t in _g_es_magic_method_names]
-                else:
-                    cplns = [("function", t + "(self") for t in _g_es_magic_method_names]
-            elif symbolstype == "global":
-                text = trg.extra.get("text")
-                if text.endswith("if"):
-                    # Add the extended name version.
-                    cplns = [("variable", t) for t in ("__file__", "__loader__", "__name__ == '__main__':", "__package__")]
-                else:
-                    cplns = [("variable", t) for t in ("__file__", "__loader__", "__name__", "__package__")]
-            ctlr.set_cplns(cplns)
-            ctlr.done("success")
-        elif trg.id == (self.lang, TRG_FORM_CPLN, "pythondoc-tags"):
-            # TODO: Would like a "tag" completion image name.
-            cplns = [("variable", t) for t in _g_pythondoc_tags]
-            ctlr.set_cplns(cplns)
-            ctlr.done("success")
+
         elif trg.type == "available-exceptions":
-            evalr = ESTreeEvaluator(ctlr, buf, trg, None, -1)
+            evalr = ECMAScriptTreeEvaluator(ctlr, buf, trg, None, -1)
             buf.mgr.request_eval(evalr)
+
         elif trg.type in ("available-imports", "module-members"):
-            evalr = ESImportsEvaluator(ctlr, buf, trg)
+            evalr = ECMAScriptImportsEvaluator(ctlr, buf, trg)
             buf.mgr.request_eval(evalr)
+
         else:
             raise NotImplementedError("not yet implemented: completion for "
-                                      "ES '%s' trigger" % trg.name)
+                                      "ECMAScript '%s' trigger" % trg.name)
 
     info_cmd = (
         r"process.stdout.write(process.version + '\n');"
@@ -402,7 +297,7 @@ class ESLangIntel(CitadelLangIntel,
         r"module.paths.forEach(function(p){process.stdout.write(p + '\n')})")
 
     def _node_info_from_node(self, node, env):
-        """Call the given ES and return:
+        """Call the given ECMAScript and return:
             (<version>, <node_prefix>, <lib-dir>, <site-lib-dir>, <sys.path>)
 
         TODO: Unicode path issues?
@@ -415,7 +310,7 @@ class ESLangIntel(CitadelLangIntel,
         stdout_lines = stdout.splitlines(0)
         retval = p.returncode
         if retval:
-            log.warn("failed to determine ES info:\n"
+            log.warn("failed to determine ECMAScript info:\n"
                      "  path: %s\n"
                      "  retval: %s\n"
                      "  stdout:\n%s\n"
@@ -440,7 +335,7 @@ class ESLangIntel(CitadelLangIntel,
         return ver, prefix, libdir, sitelibdir, sys_path
 
     def _gen_es_import_paths_from_dirs(self, dirs):
-        """Generate all ES import paths from a given list of dirs."""
+        """Generate all ECMAScript import paths from a given list of dirs."""
         for dir in dirs:
             if not exists(dir):
                 continue
@@ -480,7 +375,7 @@ class ESLangIntel(CitadelLangIntel,
             for exclude_dir in exclude_dirs:
                 if exclude_dir in extra_dirs:
                     extra_dirs.remove(exclude_dir)
-            log.debug("ES extra lib dirs: %r (minus %r)", extra_dirs, exclude_dirs)
+            log.debug("ECMAScript extra lib dirs: %r (minus %r)", extra_dirs, exclude_dirs)
         return tuple(extra_dirs)
 
     def interpreter_from_env(self, env):
@@ -489,7 +384,7 @@ class ESLangIntel(CitadelLangIntel,
               default system interpreter
             - None if none of the above exists
         """
-        # Gather information about the current python.
+        # Gather information about the current node.
         node = None
         if env.has_pref(self.interpreterPrefName):
             node = env.get_pref(self.interpreterPrefName).strip() or None
@@ -521,19 +416,41 @@ class ESLangIntel(CitadelLangIntel,
 
         return node
 
-    def es_info_from_env(self, env):
+    def ecmascript_info_from_env(self, env):
         cache_key = self.lang + "-info"
         info = env.cache.get(cache_key)
         if info is None:
             node = self.interpreter_from_env(env)
             if not node:
-                log.warn("no ES was found from which to determine the "
+                log.warn("no ECMAScript was found from which to determine the "
                          "codeintel information")
                 info = None, None, None, None, []
             else:
                 info = self._node_info_from_node(node, env)
             env.cache[cache_key] = info
         return info
+
+    def _get_stdlibs_from_env(self, env=None):
+        libdir = os.path.join(os.path.dirname(__file__), "lib_srcs", "node.js")
+        version = self.ecmascript_info_from_env(env)[0]
+        if version:
+            versioned_libdir = os.path.join(libdir, version)
+        if version and os.path.isdir(versioned_libdir):
+            # we have a lib matching the running version of Node.js
+            libdir = versioned_libdir
+        else:
+            # No valid Node.js version, or no matching lib: use highest we have
+            versions = [tuple(int(part or 0) for part in v.split("."))
+                        for v in os.listdir(libdir)
+                        if os.path.isdir(os.path.join(libdir, v)) and not v.strip("0123456789.")]
+            if versions:
+                max_version = sorted(versions, reverse=True)[0]
+                version = ".".join(str(v) for v in max_version)
+                libdir = os.path.join(libdir, version)
+        db = self.mgr.db
+        return db.get_lang_lib(lang="ECMAScript",
+                               name="node.js stdlib",
+                               dirs=(libdir,))
 
     def _buf_indep_libs_from_env(self, env):
         """Create the buffer-independent list of libs."""
@@ -549,7 +466,7 @@ class ESLangIntel(CitadelLangIntel,
                                   self._invalidate_cache)
             db = self.mgr.db
 
-            ver, prefix, libdir, sitelibdir, sys_path = self.es_info_from_env(env)
+            ver, prefix, libdir, sitelibdir, sys_path = self.ecmascript_info_from_env(env)
             libs = []
 
             # - extradirslib
@@ -581,7 +498,7 @@ class ESLangIntel(CitadelLangIntel,
                 if not exists(dir):
                     continue
                 paths_from_libname[STATE].append(dir)
-            log.debug("ES %s paths for each lib:\n%s", ver, indent(pformat(paths_from_libname)))
+            log.debug("ECMAScript %s paths for each lib:\n%s", ver, indent(pformat(paths_from_libname)))
 
             # - envlib, sitelib, cataloglib, stdlib
             if paths_from_libname["envlib"]:
@@ -589,9 +506,13 @@ class ESLangIntel(CitadelLangIntel,
             if paths_from_libname["sitelib"]:
                 libs.append(db.get_lang_lib(self.lang, "sitelib", paths_from_libname["sitelib"]))
             catalog_selections = env.get_pref("codeintel_selected_catalogs")
+            cataloglib = db.get_catalog_lib(self.lang, catalog_selections)
+            nodelib = self._get_stdlibs_from_env(env)
+            stdlib = db.get_stdlib(self.lang, ver)
             libs += [
-                db.get_catalog_lib(self.lang, catalog_selections),
-                db.get_stdlib(self.lang, ver)
+                cataloglib,
+                nodelib,
+                stdlib,
             ]
             env.cache[cache_key] = libs
 
@@ -656,7 +577,7 @@ class ESLangIntel(CitadelLangIntel,
 #    def post_process_cplns(self, cplns):
 #        """Drop special __FOO__ methods.
 
-#        Note: Eventually for some ES completions we might want to leave
+#        Note: Eventually for some ECMAScript completions we might want to leave
 #        these in. For example:
 
 #            class Bar(Foo):
@@ -670,33 +591,166 @@ class ESLangIntel(CitadelLangIntel,
 #        return CitadelEvaluator.post_process_cplns(self, cplns)
 
 
-# "from", "from .", "from .."
-_dotted_from_rx = re.compile(r'from($|\s+\.+)')
+# ---- internal support stuff
 
 
-class ESBuffer(CitadelBuffer):
+def _isident(char):
+    return "a" <= char <= "z" or "A" <= char <= "Z" or char == "_"
+
+
+def _isdigit(char):
+    return "0" <= char <= "9"
+
+
+class ScintillaMixin(object):
+    sce_lang = None
+
+    # ---- Scintilla style helpers.
+    def style_names_from_style_num(self, style_num):
+        # XXX Would like to have python-foo instead of p_foo or SCE_P_FOO, but
+        #    that requires a more comprehensive solution for all langs and
+        #    multi-langs.
+        style_names = []
+
+        # Get the constant name from ScintillaConstants.
+        if self.sce_lang not in self._style_name_from_style_num_from_lang:
+            name_from_num \
+                = self._style_name_from_style_num_from_lang[self.sce_lang] = {}
+            sce_prefixes = self.sce_prefixes
+            if sce_prefixes is None:
+                # Try and guess the prefix then.
+                log.warn("Guessing sce_prefix as 'SCE_%s_' - if that's not "
+                         "correct then define 'sce_prefixes' on your buffer"
+                         "class", self.sce_lang.upper())
+                sce_prefixes = ["SCE_%s_" % (self.sce_lang.upper())]
+            for attr in dir(ScintillaConstants):
+                for sce_prefix in sce_prefixes:
+                    if attr.startswith(sce_prefix):
+                        name_from_num[getattr(ScintillaConstants, attr)] = attr
+        else:
+            name_from_num \
+                = self._style_name_from_style_num_from_lang[self.sce_lang]
+        const_name = self._style_name_from_style_num_from_lang[self.sce_lang].get(style_num, "Unknown style")
+        style_names.append("%d - %s" % (style_num, const_name))
+
+        # Get a style group from styles.py.
+        if self.sce_lang in styles.StateMap:
+            for style_group, const_names in styles.StateMap[self.sce_lang].items():
+                if const_name in const_names:
+                    style_names.append(style_group)
+                    break
+        else:
+            log.warn("lang '%s' not in styles.StateMap: won't have "
+                     "common style groups in HTML output" % self.sce_lang)
+
+        return style_names
+
+    __string_styles = None
+
+    def string_styles(self):
+        if self.__string_styles is None:
+            state_map = styles.StateMap[self.sce_lang]
+            self.__string_styles = [
+                getattr(ScintillaConstants, style_name)
+                for style_class in ("strings", "stringeol")
+                for style_name in state_map.get(style_class, [])
+            ]
+        return self.__string_styles
+
+    __comment_styles = None
+
+    def comment_styles(self):
+        if self.__comment_styles is None:
+            state_map = styles.StateMap[self.sce_lang]
+            self.__comment_styles = [
+                getattr(ScintillaConstants, style_name)
+                for style_class in ("comments", "here documents",
+                                    "data sections")
+                for style_name in state_map.get(style_class, [])
+            ]
+        return self.__comment_styles
+
+    __number_styles = None
+
+    def number_styles(self):
+        if self.__number_styles is None:
+            state_map = styles.StateMap[self.sce_lang]
+            self.__number_styles = [
+                getattr(ScintillaConstants, style_name)
+                for style_class in ("numbers",)
+                for style_name in state_map.get(style_class, [])
+            ]
+        return self.__number_styles
+
+
+class ECMAScriptBuffer(ScintillaMixin, XMLParsingBufferMixin):
     lang = lang
-    # Fillup chars for ES: basically, any non-identifier char.
+    m_lang = lang
+    sce_lang = "UDL"
+
+    # Fillup chars for ECMAScript: basically, any non-identifier char.
     # - remove '*' from fillup chars because: "from foo import <|>*"
     cpln_fillup_chars = "~`!@#$%^&()-=+{}[]|\\;:'\",.<>?/ "
-    cpln_stop_chars = "~`!@#$%^&*()-=+{}[]|\\;:'\",.<>?/ "
-    sce_prefixes = ["SCE_P_"]
+
+    # Characters that should close an autocomplete UI:
+    # - wanted for XML completion: ">'\" "
+    # - wanted for CSS completion: " ('\";},.>"
+    # - wanted for JS completion:  "~`!@#%^&*()-=+{}[]|\\;:'\",.<>?/ "
+    # - dropping ':' because I think that may be a problem for XML tag
+    #   completion with namespaces (not sure of that though)
+    # - dropping '[' because need for "<!<|>" -> "<![CDATA[" cpln
+    # - dropping '-' because causes problem with CSS (bug 78312)
+    # - dropping '!' because causes problem with CSS "!important" (bug 78312)
+    cpln_stop_chars = "'\" (;},~`@#%^&*()=+{}]|\\;,.<>?/"
+
+    sce_prefixes = ["SCE_UDL_"]
 
     cb_show_if_empty = True
 
-    keyword_style = ScintillaConstants.SCE_P_WORD
-    identifier_style = ScintillaConstants.SCE_P_IDENTIFIER
+    keyword_style = ScintillaConstants.SCE_UDL_CSL_WORD
+    identifier_style = ScintillaConstants.SCE_UDL_CSL_IDENTIFIER
+    whitespace_style = ScintillaConstants.SCE_UDL_CSL_DEFAULT
 
     @property
     def libs(self):
         return self.langintel.libs_from_buf(self)
 
-    def trg_from_pos(self, pos, implicit=True):
-        """ES trigger types:
+    def scoperef_from_blob_and_line(self, blob, line):  # line is 1-based
+        def _scoperef_from_blob_and_line(lpath, scope):  # line is 1-based
+            end = 0
+            subscopes = scope.findall("scope")
+            if subscopes:
+                lines = [int(s.get("line", 0)) for s in subscopes]
+                num_lines = len(lines)
+                pos = bisect.bisect(lines, line)
+                if pos < 1:
+                    return 0
+                while pos <= num_lines:
+                    line_pos = lines[pos - 1]
+                    if line_pos > line:
+                        break
+                    subscope = subscopes[pos - 1]
+                    end = max(
+                        end,
+                        int(scope.get("lineend", line_pos)),
+                        _scoperef_from_blob_and_line(lpath, subscope),
+                    )
+                    if line <= end:
+                        lpath.insert(0, subscope.get("name"))
+                        break
+                    pos += 1
+            return end
+        lpath = []
+        _scoperef_from_blob_and_line(lpath, blob)
+        return (blob, lpath)
 
-        python-complete-object-members
-        python-calltip-call-signature
-        python-complete-pythondoc-tags
+    def trg_from_pos(self, pos, implicit=True):
+        """ECMAScript trigger types:
+
+        ecmascript-complete-object-properties
+        ecmascript-complete-object-members
+        ecmascript-calltip-call-signature
+        ecmascript-complete-jsdoc-tags
         complete-available-imports
         complete-module-members
 
@@ -704,9 +758,9 @@ class ESBuffer(CitadelBuffer):
             complete-available-classes
             calltip-base-signature
         """
-        DEBUG = False  # not using 'logging' system, because want to be fast
+        DEBUG = True  # not using 'logging' system, because want to be fast
         if DEBUG:
-            print("\n----- ES trg_from_pos(pos=%r, implicit=%r) -----" % (pos, implicit))
+            print("\n----- ECMAScript trg_from_pos(pos=%r, implicit=%r) -----" % (pos, implicit))
 
         if pos == 0:
             return None
@@ -729,100 +783,168 @@ class ESBuffer(CitadelBuffer):
             style_names = self.style_names_from_style_num(style)
             print("  style: %s (%s)" % (style, ", ".join(style_names)))
 
-        if last_char == "@":
-            # Possibly python-complete-pythondoc-tags (the only trigger
-            # on '@').
-            #
-            # Notes:
-            # - ESDoc 2.1b6 started allowing pythondoc tags in doc
-            #   strings which we are yet supporting here.
-            # - Trigger in comments should only happen if the comment
-            #   begins with the "##" pythondoc signifier. We don't
-            #   bother checking that (PERF).
-            if style in self.comment_styles():
-                # Only trigger at start of comment line.
-                WHITESPACE = tuple(" \t")
-                SENTINEL = 20
-                i = last_pos - 1
-                while i >= max(0, last_pos - SENTINEL):
-                    ch = accessor.char_at_pos(i)
-                    if ch == "#":
-                        return Trigger(self.lang, TRG_FORM_CPLN,
-                                       "pythondoc-tags", pos, implicit)
-                    elif ch in WHITESPACE:
+        # JSDoc completions
+        if last_char == "@" and style in self.comment_styles():
+            # If the preceeding non-whitespace character is a "*" or newline
+            # then we complete for jsdoc tag names
+            p = last_pos - 1
+            min_p = max(0, p - 50)      # Don't bother looking more than 50 chars
+            if DEBUG:
+                print("Checking match for jsdoc completions")
+            while p >= min_p and accessor.style_at_pos(p) in self.comment_styles():
+                ch = accessor.char_at_pos(p)
+                p -= 1
+                # if DEBUG:
+                #    print("Looking at ch: %r" % (ch))
+                if ch == "*" or ch in "\r\n":
+                    break
+                elif ch not in " \t\v":
+                    # Not whitespace, not a valid tag then
+                    return None
+            else:
+                # Nothing found in the specified range
+                if DEBUG:
+                    print("trg_from_pos: not a jsdoc")
+                return None
+            if DEBUG:
+                print("Matched trigger for jsdoc completion")
+            return Trigger(lang, TRG_FORM_CPLN,
+                           "jsdoc-tags", pos, implicit)
+
+        # JSDoc calltip
+        elif last_char in " \t" and style in self.comment_styles():
+            # whitespace in a comment, see if it matches for jsdoc calltip
+            p = last_pos - 1
+            min_p = max(0, p - 50)  # Don't bother looking more than 50 chars
+            if DEBUG:
+                print("Checking match for jsdoc calltip")
+            ch = None
+            ident_found_pos = None
+            while p >= min_p and accessor.style_at_pos(p) in self.comment_styles():
+                ch = accessor.char_at_pos(p)
+                p -= 1
+                if ident_found_pos is None:
+                    # print("jsdoc: Looking for identifier, at ch: %r" % (ch))
+                    if ch in " \t":
                         pass
+                    elif _isident(ch):
+                        ident_found_pos = p + 1
                     else:
+                        if DEBUG:
+                            print("No jsdoc, whitespace not preceeded by an identifer")
                         return None
-                    i -= 1
-            return None
+                elif ch == "@":
+                    # This is what we've been looking for!
+                    jsdoc_field = accessor.text_range(p + 2, ident_found_pos + 1)
+                    if DEBUG:
+                        print("Matched trigger for jsdoc calltip: '%s'" % (jsdoc_field, ))
+                    return Trigger(lang, TRG_FORM_CALLTIP,
+                                   "jsdoc-tags", ident_found_pos, implicit,
+                                   jsdoc_field=jsdoc_field)
+                elif not _isident(ch):
+                    if DEBUG:
+                        print("No jsdoc, identifier not preceeded by an '@'")
+                    # Not whitespace, not a valid tag then
+                    return None
+            # Nothing found in the specified range
+            if DEBUG:
+                print("No jsdoc, ran out of characters to look at.")
 
         # Remaing triggers should never trigger in some styles.
         if (
             implicit and
             style in self.implicit_completion_skip_styles and
-            (last_char != '_' or style in self.completion_skip_styles)
+            (last_char not in "\"'/" or style in self.completion_skip_styles)
         ):
             if DEBUG:
                 print("trg_from_pos: no: completion is suppressed in style at %s: %s (%s)" % (last_pos, style, ", ".join(style_names)))
             return None
 
-        if last_char == " ":
-            # used for:
-            #    * complete-available-imports
-            #    * complete-module-members
-            #    * complete-available-exceptions
+        if last_char == ' ' and style == ScintillaConstants.SCE_UDL_M_TAGSPACE:
+            # JSX tag properties
+            return Trigger(lang, TRG_FORM_CPLN,
+                        "object-properties", pos, implicit)
 
-            # Triggering examples ('_' means a space here):
-            #    import_                 from_
-            # Non-triggering examples:
-            #    from FOO import_        Ximport_
-            # Not bothering to support:
-            # ;  if FOO:import_          FOO;import_
+        elif last_char == ' ':
+            # used for:
+            #    * complete-module-members
 
             # Typing a space is very common so lets have a quick out before
             # doing the more correct processing:
-            if last_pos - 1 < 0 or accessor.char_at_pos(last_pos - 1) not in "tme,":
+            if last_pos - 1 < 0 or accessor.char_at_pos(last_pos - 1) not in "t,{":
                 return None
 
-            working_text = accessor.text_range(max(0, last_pos - 200),
-                                               last_pos)
+            working_text = accessor.text_range(max(0, last_pos - 200), last_pos)
             line = self._last_logical_line(working_text).strip()
             if not line:
                 return None
             ch = line[-1]
             line = line.replace('\t', ' ')
 
-            # from <|>
-            # import <|>
-            if line == "from" or line == "import":
-                return Trigger(self.lang, TRG_FORM_CPLN,
-                               "available-imports", pos, implicit,
-                               imp_prefix=())
+            # is it "import <|> from FOO" ?
+            # is it "import { <|> from FOO" ?
+            # is it "import BAR, <|> from FOO" ?
+            if line == "import" or ch in (",", "{"):
+                # imp_prefix = tuple(line[line.index(" from "):].strip().split('.'))
+                imp_prefix = ()
+                # Need better checks
+                return Trigger(lang, TRG_FORM_CPLN,
+                            "module-members", pos, implicit,
+                            imp_prefix=imp_prefix)
+
+            # TODO: ECMASCRIPT ABOVE, PYTHON BELOW: (remove this comment line)
 
             # is it "from FOO import <|>" ?
             if line.endswith(" import"):
                 if line.startswith('from '):
                     imp_prefix = tuple(line[len('from '):-len(' import')].strip().split('.'))
-                    return Trigger(self.lang, TRG_FORM_CPLN,
+                    return Trigger(lang, TRG_FORM_CPLN,
                                "module-members", pos, implicit,
                                imp_prefix=imp_prefix)
-
-            if line == "except" or line.endswith(" except"):
-                return Trigger(self.lang, TRG_FORM_CPLN,
-                               "available-exceptions", pos, implicit)
-
-            if line == "raise" or line.endswith(" raise"):
-                return Trigger(self.lang, TRG_FORM_CPLN,
-                               "available-exceptions", pos, implicit)
 
             if ch == ',':
                 # is it "from FOO import BAR, <|>" ?
                 if line.startswith('from ') and ' import ' in line:
                     imp_prefix = tuple(line[len('from '):line.index(' import')].strip().split('.'))
                     # Need better checks
-                    return Trigger(self.lang, TRG_FORM_CPLN,
+                    return Trigger(lang, TRG_FORM_CPLN,
                                "module-members", pos, implicit,
                                imp_prefix=imp_prefix)
+
+        elif last_char in "'\"":
+            # used for:
+            #    * complete-available-imports
+
+            # Typing a space is very common so lets have a quick out before
+            # doing the more correct processing:
+            if last_pos - 1 < 0 or accessor.char_at_pos(last_pos - 1) != " ":
+                return None
+
+            working_text = accessor.text_range(max(0, last_pos - 200), last_pos)
+            line = self._last_logical_line(working_text).strip()
+            if not line:
+                return None
+            line = line.replace('\t', ' ')
+
+            # from '<|>
+            if line == "from" or line.endswith(" from"):
+                return Trigger(lang, TRG_FORM_CPLN,
+                               "available-imports", pos, implicit,
+                               imp_prefix=())
+
+        elif last_char == '/':
+            if style in self.string_styles():
+                working_text = accessor.text_range(max(0, last_pos - 200), last_pos)
+                line = self._last_logical_line(working_text).strip()
+                if not line:
+                    return None
+                line = line.replace('\t', ' ')
+                if line.startswith("import ") and " from " in line:
+                    # import BAR from 'FOO/
+                    imp_prefix = tuple(line[line.rindex(" from ") + 7:].split('/'))
+                    return Trigger(lang, TRG_FORM_CPLN,
+                                   "available-imports", pos, implicit,
+                                   imp_prefix=imp_prefix)
 
         elif last_char == '.':  # must be "complete-object-members" or None
             # If the first non-whitespace character preceding the '.' in the
@@ -839,47 +961,19 @@ class ESBuffer(CitadelBuffer):
             # Non-triggering examples:
             #   FOO..
             #   FOO[1].         too hard to determine sequence element types
-            #   from FOO import (BAR.
             # Not sure if want to support:
             #   "foo".          do we want to support literals? what about
             #                   lists? tuples? dicts?
-            working_text = accessor.text_range(max(0, last_pos - 200),
-                                               last_pos)
+            working_text = accessor.text_range(max(0, last_pos - 200), last_pos)
             line = self._last_logical_line(working_text).strip()
             if line:
                 ch = line[-1]
-                if (isident(ch) or isdigit(ch) or ch in '.)'):
+                if isident(ch) or isdigit(ch) or ch in '.)':
                     line = line.replace('\t', ' ')
-                    m = _dotted_from_rx.match(line)
-                    if m:
-                        dots = len(m.group(1).strip())
-                        # magic value for imp_prefix, means "from .<|>"
-                        imp_prefix = tuple('' for i in range(dots + 2))
-                        return Trigger(self.lang, TRG_FORM_CPLN,
-                                       "available-imports", pos, implicit,
-                                       imp_prefix=imp_prefix)
-                    elif line.startswith('from '):
-                        if ' import ' in line:
-                            # we're in "from FOO import BAR." territory,
-                            # which is not a trigger
-                            return None
-                        # from FOO.
-                        imp_prefix = tuple(line[len('from '):].strip().split('.'))
-                        return Trigger(self.lang, TRG_FORM_CPLN,
-                                       "available-imports", pos, implicit,
-                                       imp_prefix=imp_prefix)
-                    elif line.startswith('import '):
-                        # import FOO.
-                        # figure out the dotted parts of "FOO" above
-                        imp_prefix = tuple(line[len('import '):].strip().split('.'))
-                        return Trigger(self.lang, TRG_FORM_CPLN,
-                                       "available-imports", pos, implicit,
-                                       imp_prefix=imp_prefix)
-                    else:
-                        return Trigger(self.lang, TRG_FORM_CPLN,
-                                       "object-members", pos, implicit)
+                    return Trigger(lang, TRG_FORM_CPLN,
+                                   "object-members", pos, implicit)
                 elif ch in ("\"'"):
-                    return Trigger(self.lang, TRG_FORM_CPLN,
+                    return Trigger(lang, TRG_FORM_CPLN,
                                    "literal-members", pos, implicit,
                                    citdl_expr="str")
             else:
@@ -887,59 +981,6 @@ class ESBuffer(CitadelBuffer):
             if DEBUG:
                 print("trg_from_pos: no: non-ws char preceding '.' is not an identifier char or ')': %r" % ch)
             return None
-
-        elif last_char == "_":
-            # used for:
-            #    * complete-magic-symbols
-
-            # Triggering examples:
-            #   def __<|>init__
-            #   if __<|>name__ == '__main__':
-            #   __<|>file__
-
-            # Ensure double "__".
-            if last_pos - 1 < 0 or accessor.char_at_pos(last_pos - 1) != "_":
-                return None
-
-            beforeChar = None
-            beforeStyle = None
-            if last_pos - 2 >= 0:
-                beforeChar = accessor.char_at_pos(last_pos - 2)
-                beforeStyle = accessor.style_at_pos(last_pos - 2)
-
-            if DEBUG:
-                print("trg_from_pos:: checking magic symbol, beforeChar: %r" % (beforeChar))
-            if beforeChar and beforeChar in "\"'" and beforeStyle in self.string_styles():
-                if DEBUG:
-                    print("trg_from_pos:: magic-symbols - string")
-                return Trigger(self.lang, TRG_FORM_CPLN,
-                               "magic-symbols", last_pos - 1, implicit,
-                               symbolstype="string")
-
-            elif beforeChar == "." and beforeStyle != style:
-                # Turned this off, as it interferes with regular "xxx." object
-                # completions.
-                return None
-
-            if beforeStyle == style:
-                # No change in styles between the characters -- abort.
-                return None
-
-            text = accessor.text_range(max(0, last_pos - 20), last_pos - 1).strip()
-            if beforeChar and beforeChar in " \t":
-                if text.endswith("def"):
-                    posttext = accessor.text_range(pos, min(accessor.length(), pos + 20)).replace(" ", "")
-                    if DEBUG:
-                        print("trg_from_pos:: magic-symbols - def")
-                    return Trigger(self.lang, TRG_FORM_CPLN,
-                                   "magic-symbols", last_pos - 1, implicit,
-                                   symbolstype="def",
-                                   posttext=posttext)
-            if DEBUG:
-                print("trg_from_pos:: magic-symbols - global")
-            return Trigger(self.lang, TRG_FORM_CPLN,
-                           "magic-symbols", last_pos - 1, implicit,
-                           symbolstype="global", text=text)
 
         elif last_char == '(':
             # If the first non-whitespace character preceding the '(' in the
@@ -989,11 +1030,11 @@ class ESBuffer(CitadelBuffer):
                         imp_prefix = tuple(lstripped[len('from '):lstripped.index(' import')].split('.'))
                         if DEBUG:
                             print("trg_from_pos: from FOO import (")
-                        return Trigger(self.lang, TRG_FORM_CPLN,
+                        return Trigger(lang, TRG_FORM_CPLN,
                                    "module-members", pos, implicit,
                                    imp_prefix=imp_prefix)
                     else:
-                        return Trigger(self.lang, TRG_FORM_CALLTIP, "call-signature", pos, implicit)
+                        return Trigger(lang, TRG_FORM_CALLTIP, "call-signature", pos, implicit)
                 else:
                     if DEBUG:
                         print("trg_from_pos: no: non-ws char preceding '(' is not an identifier char: %r" % ch)
@@ -1008,7 +1049,7 @@ class ESBuffer(CitadelBuffer):
             if line:
                 last_bracket = line.rfind("(")
                 pos = (pos - (len(line) - last_bracket))
-                return Trigger(self.lang, TRG_FORM_CALLTIP, "call-signature", pos, implicit)
+                return Trigger(lang, TRG_FORM_CALLTIP, "call-signature", pos, implicit)
             else:
                 return None
 
@@ -1052,7 +1093,7 @@ class ESBuffer(CitadelBuffer):
             citdl_expr = accessor.text_range(last_pos - 1, last_pos + 1)
             if DEBUG:
                 print("  triggered 2 char symbol trigger: %r" % (citdl_expr, ))
-            return Trigger(self.lang, TRG_FORM_CPLN, "local-symbols",
+            return Trigger(lang, TRG_FORM_CPLN, "local-symbols",
                            last_pos - 1, implicit,
                            citdl_expr=citdl_expr,
                            preceeding_text=preceeding_text)
@@ -1065,7 +1106,7 @@ class ESBuffer(CitadelBuffer):
         return logicalline
 
 
-class ESImportHandler(ImportHandler):
+class ECMAScriptImportHandler(ImportHandler):
     lang = lang  # XXX do this for other langs as well
     sep = '/'
 
@@ -1076,7 +1117,6 @@ class ESImportHandler(ImportHandler):
     suffixes = (
         ".js",
         ".jsx",
-        ".node",
         ".es",
     )
     suffixes_dict = dict((s, i) for i, s in enumerate(suffixes, 1))
@@ -1112,6 +1152,14 @@ class ESImportHandler(ImportHandler):
                             if module:
                                 return (module[0], name, module[2])
 
+            if not suffix:
+                for _suffix in suffixes:
+                    _name = dirname(name)
+                    _mod = basename(name)
+                    init = os.path.join(_name, _mod + _suffix)
+                    if os.path.exists(os.path.join(imp_dir, init)):
+                        return (suffixes_dict[_suffix], _name, (init, _mod, False))
+
             for _suffix in suffixes:
                 init = os.path.join(name, 'index' + _suffix)
                 if os.path.exists(os.path.join(imp_dir, init)):
@@ -1124,7 +1172,7 @@ class ESImportHandler(ImportHandler):
         """See citadel.py::ImportHandler.find_importables_in_dir() for
         details.
 
-        Importables for ES look like this:
+        Importables for ECMAScript look like this:
             {"foo":    ("foo.js",             None,       False),
              "foolib": ("foolib/index.js",    "index",    False),
              "bar":    ("bar.jsx",            None,       False),
@@ -1146,9 +1194,10 @@ class ESImportHandler(ImportHandler):
         if os.path.isdir(imp_dir):
             modules = []
             for name in os.listdir(imp_dir):
-                module = self._find_importable(imp_dir, name)
-                if module:
-                    modules.append(module)
+                if not name.startswith('.'):
+                    module = self._find_importable(imp_dir, name)
+                    if module:
+                        modules.append(module)
             modules.sort(key=lambda mod: mod[0])
 
             for _, mod, importable in modules:
@@ -1158,13 +1207,13 @@ class ESImportHandler(ImportHandler):
         return importables
 
 
-class ESCILEDriver(CILEDriver):
+class ECMAScriptCILEDriver(CILEDriver):
     lang = lang
 
     def scan_purelang(self, buf):
-        # log.warn("TODO: ES cile that uses elementtree")
+        # log.warn("TODO: ECMAScript cile that uses elementtree")
         content = buf.accessor.text
-        el = escile.scan_et(content, buf.path, lang=self.lang)
+        el = ecmacile.scan_et(content, buf.path, lang=self.lang)
         return el
 
 
@@ -1176,9 +1225,9 @@ class ESCILEDriver(CILEDriver):
 def register(mgr):
     """Register language support with the Manager."""
     mgr.set_lang_info(lang,
-                      silvercity_lexer=ESLexer(mgr),
-                      buf_class=ESBuffer,
-                      langintel_class=ESLangIntel,
-                      import_handler_class=ESImportHandler,
-                      cile_driver_class=ESCILEDriver,
+                      silvercity_lexer=ECMAScriptLexer(),
+                      buf_class=ECMAScriptBuffer,
+                      langintel_class=ECMAScriptLangIntel,
+                      import_handler_class=ECMAScriptImportHandler,
+                      cile_driver_class=ECMAScriptCILEDriver,
                       is_cpln_lang=True)

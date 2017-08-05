@@ -106,7 +106,7 @@ def guess_lang_from_path(path):
         ".mason.html": "Mason",
         ".ttkt.html": "TemplateToolkit",
         ".cxx": "C++",
-        ".es": "ES",
+        ".es": "ECMAScript",
     }
     idx = 0
     base = basename(path)
