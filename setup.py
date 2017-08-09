@@ -209,6 +209,7 @@ install_requires = [
     'applib',
     'chardet',
     'cmdln',
+    'esprima',
     'inflector',
     'six',
     'zope.cachedescriptors',
