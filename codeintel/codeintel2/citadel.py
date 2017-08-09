@@ -547,7 +547,7 @@ class ImportHandler:
         for lib in libs:
             blob = lib.get_blob(import_name)
             if blob is not None:
-                ctlr.info("is blob '%s' from %s? yes", import_name, lib)
+                ctlr.info("is blob '%s' from %s? yes (%s)", import_name, lib, blob.get("src"))
                 return blob
             else:
                 ctlr.info("is blob '%s' from %s? no", import_name, lib)

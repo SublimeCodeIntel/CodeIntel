@@ -96,7 +96,6 @@ class Shell(cmdln.Cmdln):
 
         # Don't redirect output
         os.environ["KOMODO_VERBOSE"] = "1"
-        logging.basicConfig(stream=TextStream(sys.stderr))
 
         self.verbosity = 0
         self.traceback = False
@@ -205,7 +204,7 @@ class Shell(cmdln.Cmdln):
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             stream = open(value, 'wt')
-        logging.basicConfig(stream=TextStream(stream))
+        logging.getLogger().addHandler(logging.StreamHandler(stream=TextStream(stream)))
         # XXX marky horrible ugly hack
         sys.stderr = stream
         sys.stdout = stream
