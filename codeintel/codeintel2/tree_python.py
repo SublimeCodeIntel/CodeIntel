@@ -502,8 +502,14 @@ class PythonTreeEvaluator(TreeEvaluator):
             scoperef = (self.built_in_blob, [])
             return (self.built_in_blob, scoperef), 1
 
+        elem = self._elem_from_scoperef(scoperef)
+        if first_token == elem.get("name"):
+            # The element itself is the thing we wanted...
+            self.log("is '%s' accessible on %s? yes: %s",
+                     first_token, scoperef, elem)
+            return (elem, scoperef), 1
+
         while 1:
-            elem = self._elem_from_scoperef(scoperef)
             if first_token in elem.names:
                 #TODO: skip __hidden__ names
                 self.log("is '%s' accessible on %s? yes: %s",
@@ -517,16 +523,11 @@ class PythonTreeEvaluator(TreeEvaluator):
                          '.'.join(tokens[:nconsumed]), scoperef, hit[0])
                 return hit, nconsumed
 
-            if first_token == elem.get("name"):
-                # The element itself is the thing we wanted...
-                self.log("is '%s' accessible on %s? yes: %s",
-                         first_token, scoperef, elem)
-                return (elem, scoperef), 1
-
             self.log("is '%s' accessible on %s? no", first_token, scoperef)
             scoperef = self.parent_scoperef_from_scoperef(scoperef)
             if not scoperef:
                 return None, None
+            elem = self._elem_from_scoperef(scoperef)
 
     def _set_reldirlib_from_blob(self, blob):
         """Set the relative import directory to be this blob's location."""

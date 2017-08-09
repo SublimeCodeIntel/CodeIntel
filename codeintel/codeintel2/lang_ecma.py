@@ -37,8 +37,7 @@
 
 """ECMAScript support for CodeIntel"""
 
-from __future__ import absolute_import
-from __future__ import print_function
+from __future__ import absolute_import, print_function, division
 
 import os
 from os.path import exists, dirname, join, normcase, basename
@@ -49,7 +48,7 @@ import weakref
 import re
 from pprint import pformat
 import json
-import bisect
+from collections import namedtuple
 
 from SilverCity import ScintillaConstants
 
@@ -500,7 +499,7 @@ class ECMAScriptLangIntel(CitadelLangIntel,
                 paths_from_libname[STATE].append(dir)
             log.debug("ECMAScript %s paths for each lib:\n%s", ver, indent(pformat(paths_from_libname)))
 
-            # - envlib, sitelib, cataloglib, stdlib
+            # - envlib, sitelib, cataloglib, nodelib, stdlib
             if paths_from_libname["envlib"]:
                 libs.append(db.get_lang_lib(self.lang, "envlib", paths_from_libname["envlib"]))
             if paths_from_libname["sitelib"]:
@@ -716,33 +715,54 @@ class ECMAScriptBuffer(ScintillaMixin, XMLParsingBufferMixin):
         return self.langintel.libs_from_buf(self)
 
     def scoperef_from_blob_and_line(self, blob, line):  # line is 1-based
-        def _scoperef_from_blob_and_line(lpath, scope):  # line is 1-based
-            end = 0
+        def _scoperef_from_blob_and_line(result, scope, parent_path):
+            start = None
+            end = None
             subscopes = scope.findall("scope")
-            if subscopes:
-                lines = [int(s.get("line", 0)) for s in subscopes]
-                num_lines = len(lines)
-                pos = bisect.bisect(lines, line)
-                if pos < 1:
-                    return 0
-                while pos <= num_lines:
-                    line_pos = lines[pos - 1]
-                    if line_pos > line:
-                        break
-                    subscope = subscopes[pos - 1]
-                    end = max(
-                        end,
-                        int(scope.get("lineend", line_pos)),
-                        _scoperef_from_blob_and_line(lpath, subscope),
-                    )
-                    if line <= end:
-                        lpath.insert(0, subscope.get("name"))
-                        break
-                    pos += 1
-            return end
-        lpath = []
-        _scoperef_from_blob_and_line(lpath, blob)
-        return (blob, lpath)
+            for subscope in subscopes:
+                path = parent_path + [subscope]
+                # Get current scope line and lineend:
+                linestart = int(subscope.get("line", 0))
+                lineend = int(subscope.get("lineend", linestart))
+                # Get first and last line in all subecopes:
+                _linestart, _lineend = _scoperef_from_blob_and_line(result, subscope, path)
+                if _linestart is not None and linestart > _linestart:
+                    linestart = _linestart
+                if _lineend is not None and lineend < _lineend:
+                    lineend = _lineend
+                # Keep track of start and end:
+                if start is None or start > linestart:
+                    start = linestart
+                if end is None or end < lineend:
+                    end = lineend
+                # If the line being requested is in range...
+                if line >= linestart and line <= lineend:
+                    delta = line - linestart
+                    # Check if it's closer to the already found result:
+                    if delta <= 0:
+                        # It's at the line or after...
+                        delta = -delta
+                        if result.delta is None or delta < result.delta:
+                            # it's closer, set result
+                            result.delta = delta
+                            result.path = path
+                        elif delta == result.delta:
+                            if len(path) > len(result.path):
+                                # it's the same but it's a deeper scope, set result
+                                result.delta = delta
+                                result.path = path
+                    else:
+                        # it's before...
+                        if result.delta is None or delta < result.delta:
+                            # it's closer, set result
+                            result.delta = delta
+                            result.path = path
+            return start, end
+        result = namedtuple("Result", "delta path")
+        result.delta = None
+        result.path = []
+        start, end = _scoperef_from_blob_and_line(result, blob, [])
+        return (blob, [subscope.get("name") for subscope in result.path])
 
     def trg_from_pos(self, pos, implicit=True):
         """ECMAScript trigger types:
@@ -1129,7 +1149,7 @@ class ECMAScriptImportHandler(ImportHandler):
     )
     subpaths_re = re.compile(r'(^|/)(?:%s)($|/)' % r'|'.join(subpaths))
 
-    def _find_importable(self, imp_dir, name, find_package=True):
+    def _find_importable(self, imp_dir, name, boost, find_package=True):
         mod, suffix = os.path.splitext(name)
         if mod != 'index':
             suffixes = self.suffixes
@@ -1148,9 +1168,11 @@ class ECMAScriptImportHandler(ImportHandler):
                     for subpath in self.subpaths:
                         _name = os.path.join(name, self.subpaths_re.sub(r'\1%s\2' % subpath, main))
                         if os.path.exists(os.path.join(imp_dir, dirname(_name))):
-                            module = self._find_importable(imp_dir, _name)
+                            module = self._find_importable(imp_dir, _name, boost // 2, find_package=False)
                             if module:
-                                return (module[0], name, module[2])
+                                # Remove subpath from module name
+                                module = (module[0], name, module[2])
+                                return module
 
             if not suffix:
                 for _suffix in suffixes:
@@ -1158,15 +1180,15 @@ class ECMAScriptImportHandler(ImportHandler):
                     _mod = basename(name)
                     init = os.path.join(_name, _mod + _suffix)
                     if os.path.exists(os.path.join(imp_dir, init)):
-                        return (suffixes_dict[_suffix], _name, (init, _mod, False))
+                        return (suffixes_dict[_suffix] + boost, _name, (init, _mod, False))
 
             for _suffix in suffixes:
                 init = os.path.join(name, 'index' + _suffix)
                 if os.path.exists(os.path.join(imp_dir, init)):
-                    return (suffixes_dict[_suffix], name, (init, 'index', False))
+                    return (suffixes_dict[_suffix] + boost, name, (init, 'index', False))
 
             if suffix in suffixes:
-                return (suffixes_dict[suffix], mod, (name, basename(mod), False))
+                return (suffixes_dict[suffix] + boost, mod, (name, basename(mod), False))
 
     def find_importables_in_dir(self, imp_dir):
         """See citadel.py::ImportHandler.find_importables_in_dir() for
@@ -1189,20 +1211,37 @@ class ECMAScriptImportHandler(ImportHandler):
             # TODO: stop these getting in here.
             return {}
 
-        importables = {}
+        modules = []
 
         if os.path.isdir(imp_dir):
-            modules = []
             for name in os.listdir(imp_dir):
                 if not name.startswith('.'):
-                    module = self._find_importable(imp_dir, name)
+                    module = self._find_importable(imp_dir, name, 100)
                     if module:
                         modules.append(module)
-            modules.sort(key=lambda mod: mod[0])
 
-            for _, mod, importable in modules:
-                if mod not in importables:
-                    importables[mod] = importable
+            package_json = os.path.join(imp_dir, 'package.json')
+            if os.path.exists(package_json):
+                for subpath in self.subpaths:
+                    _imp_dir = os.path.join(imp_dir, subpath)
+                    if os.path.isdir(_imp_dir):
+                        for name in os.listdir(_imp_dir):
+                            if not name.startswith('.'):
+                                module = self._find_importable(imp_dir, os.path.join(subpath, name), 0, find_package=False)
+                                if module:
+                                    # Remove subpath from module name
+                                    mod, suffix = os.path.splitext(name)
+                                    module = (module[0], mod, module[2])
+                                    modules.append(module)
+                        break
+
+        modules.sort(key=lambda mod: mod[0])
+
+        importables = {}
+
+        for _, mod, importable in modules:
+            if mod not in importables:
+                importables[mod] = importable
 
         return importables
 

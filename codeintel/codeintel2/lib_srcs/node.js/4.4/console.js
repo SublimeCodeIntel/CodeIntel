@@ -84,6 +84,5 @@ console.Console.prototype.trace = function(message) {}
  */
 console.Console.prototype.warn = function(data) {}
 
-exports = console;
+
 exports.default = console.Console();
-exports.default.Console = console.Console;
