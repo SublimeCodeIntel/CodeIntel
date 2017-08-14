@@ -492,12 +492,12 @@ class XMLParsingBufferMixin(CitadelBuffer):
         self.env.add_pref_observer("default%sDecl" % self.m_lang,
                                    self.__on_pref_change)
 
-    def scan(self, mtime=None, skip_scan_time_check=False):
+    def scan(self, mtime=None, skip_scan_time_check=False, reporter=None):
         """Rescan the buffer.
         In the XML parsing buffer's case, we should do whatever the normal
         thing is, plus force a reparse of the XML.
         """
-        super(XMLParsingBufferMixin, self).scan(mtime, skip_scan_time_check)
+        super(XMLParsingBufferMixin, self).scan(mtime, skip_scan_time_check, reporter=reporter)
         # Reset xml tree cache, so sections list works correctly - bug 101442.
         self._xml_tree_cache = None
 

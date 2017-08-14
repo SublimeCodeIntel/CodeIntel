@@ -192,8 +192,7 @@ class CitadelBuffer(Buffer):
         finally:
             self.release_lock()
 
-    @property
-    def blob_from_lang(self):
+    def get_blob_from_lang(self, reporter=None):
         self.acquire_lock()
         try:
             if self._blob_from_lang_cache is None:
@@ -202,13 +201,17 @@ class CitadelBuffer(Buffer):
                 except NotFoundInDatabase:
                     self.release_lock()
                     try:
-                        self.scan()
+                        self.scan(reporter=reporter)
                     finally:
                         self.acquire_lock()
                     self._load_buf_data_once(True)
             return self._blob_from_lang_cache
         finally:
             self.release_lock()
+
+    @property
+    def blob_from_lang(self):
+        return self.get_blob_from_lang()
 
     @property
     def tree(self):
@@ -239,7 +242,7 @@ class CitadelBuffer(Buffer):
         """The CIX for this buffer. Will lazily scan if necessary."""
         return ET.tostring(self.tree)
 
-    def scan(self, mtime=None, skip_scan_time_check=False):
+    def scan(self, mtime=None, skip_scan_time_check=False, reporter=None):
         """Scan the current buffer.
 
             "mtime" is the modification time of the buffer content. If
@@ -256,6 +259,9 @@ class CitadelBuffer(Buffer):
         cile_driver = self.mgr.citadel.cile_driver_from_lang(self.lang)
         if mtime is None:
             mtime = time.time()
+
+        if reporter:
+            reporter("Scanning %s file '%s'" % (self.lang, self.path))
 
         #TODO: Eventually would like the CILEDriver scan methods to have
         #      a signature more inline with
@@ -350,9 +356,9 @@ class CitadelBuffer(Buffer):
                 break
         return (blob, lpath)
 
-    def scan_if_necessary(self):
+    def scan_if_necessary(self, reporter=None):
         # SIDE-EFFECT: results in `self.scan()` if not in the db.
-        self.blob_from_lang
+        self.get_blob_from_lang(reporter=reporter)
 
     def unload(self):
         """Remove this buffer from the database."""
@@ -367,7 +373,7 @@ class BinaryBuffer(CitadelBuffer):
         self.lang = lang
         super(BinaryBuffer, self).__init__(mgr, None, env, path, None)
         
-    def scan(self, mtime=None, skip_scan_time_check=False):
+    def scan(self, mtime=None, skip_scan_time_check=False, reporter=None):
         if self.path is None:
             raise CodeIntelError("cannot scan %s buffer: 'path' is not set (setting "
                                  "a fake path starting with '<Unsaved>' is okay)"
@@ -376,6 +382,9 @@ class BinaryBuffer(CitadelBuffer):
         cile_driver = self.mgr.citadel.cile_driver_from_lang(self.lang)
         if mtime is None:
             mtime = time.time()
+
+        if reporter:
+            reporter("Scanning %s file '%s'" % (self.lang, self.path))
 
         scan_tree = None
         try:

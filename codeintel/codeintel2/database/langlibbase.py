@@ -92,14 +92,12 @@ class LangDirsLibBase(object):
                     return
                 current += 1
                 if base not in res_index:
-                    if reporter and hasattr(reporter, "onScanFile"):
-                        try:
-                            reporter.onScanFile("Scanning %s file '%s'" % (self.lang, join(dir, base)),
-                                                dir,
-                                                current,
-                                                total)
-                        except:
-                            pass  # eat any errors about reporting progress
+                    def scan_reporter(msg):
+                        if reporter and hasattr(reporter, "onScanFile"):
+                            try:
+                                reporter.onScanFile(msg, dir, current, total)
+                            except:
+                                pass  # eat any errors about reporting progress
                     try:
                         buf = self.mgr.buf_from_path(join(dir, base),
                                                      lang=self.lang)
@@ -110,7 +108,7 @@ class LangDirsLibBase(object):
                         continue
                     if ctlr is not None:
                         ctlr.info("load %r", buf)
-                    buf.scan_if_necessary()
+                    buf.scan_if_necessary(reporter=reporter and scan_reporter)
 
             # Remove scanned paths that don't exist anymore.
             for base in removed_values:
