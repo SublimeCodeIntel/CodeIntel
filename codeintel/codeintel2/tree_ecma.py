@@ -866,7 +866,7 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
         for ref in elem.get(refs, "").split():
             try:
                 self.log("is '%s' from base %s: %r?", first_token, ilk or elem.tag, ref)
-                hit, nconsumed = self._hit_from_citdl(ref, [], scoperef, variable=elem, defn_only=defn_only)
+                hit, nconsumed = self._hit_from_citdl(ref, tokens, scoperef, variable=elem, defn_only=defn_only)
                 if hit:
                     return hit, nconsumed
             except CodeIntelError as ex:
