@@ -265,6 +265,18 @@ class ECMAScriptLangIntel(CitadelLangIntel,
             else:
                 try:
                     citdl_expr = self.citdl_expr_from_trg(buf, trg)
+                    if citdl_expr.startswith("require()"):
+                        # Ugly hack passing required_library_name with trg
+                        # so it can resolve required defn
+                        working_text = buf.accessor.text_range(trg.pos - 200, trg.pos)
+                        needle = working_text.rfind("require(")
+                        if needle > 0:
+                            working_text = working_text[needle + 8:]
+                            needle = working_text.find(working_text[0], 1)
+                            if needle > 0:
+                                working_text = working_text[1:needle]
+                                if working_text:
+                                    trg.required_library_name = working_text
                 except CodeIntelError as ex:
                     ctlr.error(str(ex))
                     ctlr.done("error")
@@ -714,54 +726,71 @@ class ECMAScriptBuffer(ScintillaMixin, XMLParsingBufferMixin):
     def libs(self):
         return self.langintel.libs_from_buf(self)
 
-    def scoperef_from_blob_and_line(self, blob, line):  # line is 1-based
+    def scoperef_from_blob_and_line(self, blob, line, pos):  # line is 1-based
         def _scoperef_from_blob_and_line(result, scope, parent_path):
-            start = None
-            end = None
+            linestart = None
+            lineend = None
+            posstart = None
+            posend = None
             subscopes = scope.findall("scope")
             for subscope in subscopes:
                 path = parent_path + [subscope]
-                # Get current scope line and lineend:
-                linestart = int(subscope.get("line", 0))
-                lineend = int(subscope.get("lineend", linestart))
                 # Get first and last line in all subecopes:
-                _linestart, _lineend = _scoperef_from_blob_and_line(result, subscope, path)
-                if _linestart is not None and linestart > _linestart:
-                    linestart = _linestart
-                if _lineend is not None and lineend < _lineend:
-                    lineend = _lineend
-                # Keep track of start and end:
-                if start is None or start > linestart:
-                    start = linestart
-                if end is None or end < lineend:
-                    end = lineend
+                _lstart, _lend, _pstart, _pend = _scoperef_from_blob_and_line(result, subscope, path)
+
+                # Get current scope line and lineend:
+                lstart = int(subscope.get("line", 0))
+                lend = int(subscope.get("lineend", lstart))
+                if _lstart is not None and lstart > _lstart:
+                    lstart = _lstart
+                if _lend is not None and lend < _lend:
+                    lend = _lend
+                # Keep track of linestart and lineend:
+                if linestart is None or linestart > lstart:
+                    linestart = lstart
+                if lineend is None or lineend < lend:
+                    lineend = lend
+
                 # If the line being requested is in range...
-                if line >= linestart and line <= lineend:
-                    delta = line - linestart
+                if line >= lstart and line <= lend:
+                    dline = line - lstart
                     # Check if it's closer to the already found result:
-                    if delta <= 0:
+                    if dline <= 0:
                         # It's at the line or after...
-                        delta = -delta
-                        if result.delta is None or delta < result.delta:
+                        dline = -dline
+                        if result.dline is None or dline < result.dline:
                             # it's closer, set result
-                            result.delta = delta
+                            result.dline = dline
                             result.path = path
-                        elif delta == result.delta:
-                            if len(path) > len(result.path):
+                        elif dline == result.dline:
+                            pstart = int(subscope.get("start", 0))
+                            pend = int(subscope.get("end", pstart))
+                            if _pstart is not None and pstart > _pstart:
+                                pstart = _pstart
+                            if _pend is not None and pend < _pend:
+                                pend = _pend
+                            # Keep track of posstart and posend:
+                            if posstart is None or posstart > pstart:
+                                posstart = pstart
+                            if posend is None or posend < pend:
+                                posend = pend
+                            dpos = min(abs(pos - pstart), abs(pos - pend))
+                            if result.dpos is None or dpos < result.dpos:
                                 # it's the same but it's a deeper scope, set result
-                                result.delta = delta
+                                result.dpos = dpos
                                 result.path = path
                     else:
                         # it's before...
-                        if result.delta is None or delta < result.delta:
+                        if result.dline is None or dline < result.dline:
                             # it's closer, set result
-                            result.delta = delta
+                            result.dline = dline
                             result.path = path
-            return start, end
-        result = namedtuple("Result", "delta path")
-        result.delta = None
+            return linestart, lineend, posstart, posend
+        result = namedtuple("Result", "dline path")
+        result.dline = None
+        result.dpos = None
         result.path = []
-        start, end = _scoperef_from_blob_and_line(result, blob, [])
+        linestart, lineend, posstart, posend = _scoperef_from_blob_and_line(result, blob, [])
         return (blob, [subscope.get("name") for subscope in result.path])
 
     def trg_from_pos(self, pos, implicit=True):

@@ -43,7 +43,7 @@ import re
 from os.path import dirname, join, exists, isdir, abspath
 import operator
 
-from codeintel2.common import CodeIntelError
+from codeintel2.common import CodeIntelError, EvalError
 from codeintel2.tree import TreeEvaluator
 
 base_exception_class_completions = [
@@ -168,6 +168,14 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
     def libs(self, value):
         self._libs = value
 
+    def get_start_scoperef(self):
+        linenum = self.line + 1  # convert to 1-based
+        try:
+            blob = self.buf.blob_from_lang[self.trg.lang]
+        except KeyError:
+            raise EvalError("no %s scan info for %r" % (self.lang, self.buf))
+        return self.buf.scoperef_from_blob_and_line(blob, linenum, self.trg.pos)
+
     def eval_cplns(self):
         self.log_start()
         if self.trg.type == 'available-exceptions':
@@ -182,21 +190,21 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
         #    return self._available_classes(start_scoperef, self.trg.extra["consumed"])
         if self.trg.type == "object-properties":
             return self._available_properties(start_scoperef, self.expr)
-        hit = self._hit_from_citdl(self.expr, start_scoperef)
+        hit = self._hit_from_type_inference(self.expr, start_scoperef)
         return list(self._members_from_hit(hit))
 
     def eval_calltips(self):
         self.log_start()
         start_scoperef = self.get_start_scoperef()
         self.info("start scope is %r", start_scoperef)
-        hit = self._hit_from_citdl(self.expr, start_scoperef)
+        hit = self._hit_from_type_inference(self.expr, start_scoperef)
         return [self._calltip_from_hit(hit)]
 
     def eval_defns(self):
         self.log_start()
         start_scoperef = self.get_start_scoperef()
         self.info("start scope is %r", start_scoperef)
-        hit = self._hit_from_citdl(self.expr, start_scoperef, defn_only=True)
+        hit = self._hit_from_type_inference(self.expr, start_scoperef, defn_only=True)
         return [self._defn_from_hit(hit)]
 
     def _defn_from_hit(self, hit):
@@ -230,13 +238,13 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
         cplns = []
         found_names = set()
         while scoperef:
-            elem = self._elem_from_scoperef(scoperef)
-            if not elem:
-                break
+            elem, _ = self._elem_from_scoperef(scoperef)
             for child in elem:
                 if child.tag == "import":
                     name = child.get("alias") or child.get("symbol") or child.get("module")
                     # TODO: Deal with "*" imports.
+                elif elem.get("ilk") in ("interface", "class", "instance", "object"):
+                    continue
                 else:
                     name = child.get("name", "")
                 if name.startswith(expr):
@@ -264,7 +272,7 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
 
     def _available_properties(self, scoperef, expr):
         while scoperef:
-            elem = self._elem_from_scoperef(scoperef)
+            elem, _ = self._elem_from_scoperef(scoperef)
             attributes = elem.get("attributes", "").split()
             if "__jsx__" in attributes:
                 break
@@ -424,26 +432,16 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
         elem, scoperef = hit
         ilk = elem.get("ilk")
 
-        if ilk == "class":
-            refs = "classrefs"
-            if hidden is None:
-                hidden = ["__hidden__", "__instancevar__"]
-        elif ilk == "instance":
-            refs = "classrefs"
-            if hidden is None:
-                hidden = ["__hidden__", "__staticmethod__", "__ctor__"]
-        elif ilk == "interface":
-            refs = "interfacerefs"
-            if hidden is None:
-                hidden = ["__hidden__"]
-        elif ilk == "object":
-            refs = "objectrefs"
-            if hidden is None:
-                hidden = ["__hidden__"]
-        else:
-            refs = None
-            if hidden is None:
-                hidden = ["__hidden__"]
+        refs, _hidden = {
+            "blob": (None, ["__hidden__"]),
+            "block": (None, ["__hidden__"]),
+            "function": (None, ["__hidden__"]),
+            "class": ("classrefs", ["__hidden__", "__instancevar__"]),
+            "instance": ("classrefs", ["__hidden__", "__staticmethod__", "__ctor__"]),
+            "interface": ("interfacerefs", ["__hidden__"]),
+        }.get(ilk, ("objectrefs", ["__hidden__"]))
+        if hidden is None:
+            hidden = _hidden
 
         members = set()
         for child in elem:
@@ -480,19 +478,18 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
 
         return members
 
-    def _hit_from_citdl(self, expr, scoperef, variable=None, defn_only=False):
+    def _hit_from_citdl(self, expr, tokens, scoperef, variable=None, defn_only=False):
         """Resolve the given CITDL expression (starting at the given
         scope) down to a non-import/non-variable hit.
         """
         self._check_infinite_recursion(expr)
-        tokens = list(self._tokenize_citdl_expr(expr))
+
+        tokens = list(self._tokenize_citdl_expr(expr)) + tokens
         # self.log("expr tokens: %r", tokens)
 
-        hit, nconsumed = self._hit_from_tokens(tokens, expr, scoperef, variable=variable, defn_only=defn_only)
+        return self._hit_from_tokens(expr, tokens, scoperef, variable=variable, defn_only=defn_only)
 
-        return hit
-
-    def _hit_from_tokens(self, tokens, expr, scoperef, variable=None, defn_only=False):
+    def _hit_from_tokens(self, expr, tokens, scoperef, variable=None, defn_only=False):
         args_scoperef = scoperef
 
         # First part...
@@ -528,27 +525,28 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
     def _hit_from_require(self, tokens, scoperef, variable=None, defn_only=False):
         # Node.js / CommonJS hack: try to resolve things via require()
         if len(tokens) > 1 and tokens[1][0] == "(":
-            if variable is not None:
-                requirename = variable.get("required_library_name")
-                if requirename:
-                    self.log("_hit_from_variable_type_inference: resolving require(%r)", requirename)
-                    module_name = requirename.lstrip("./")
-                    if len(tokens) > 2:
-                        symbol = tokens[2]
-                        remaining_tokens = tokens[3:]
-                        _nconsumed = 2
-                    else:
-                        symbol = None
-                        remaining_tokens = tokens[2:]
-                        _nconsumed = 1
-                    require = FakeImport(variable,
-                                         module=requirename,
-                                         symbol=symbol,
-                                         alias=None)
-                    hit, nconsumed = self._hit_from_elem_imports([module_name] + remaining_tokens, require, defn_only=defn_only)
-                    if hit is not None:
-                        return hit, nconsumed + _nconsumed
-                raise CodeIntelError("could not resolve require(%r)" % requirename)
+            if variable is None:
+                variable, _ = self._elem_from_scoperef(scoperef)
+            requirename = variable.get("required_library_name", getattr(self.trg, "required_library_name", None))
+            if requirename:
+                self.log("_hit_from_variable_type_inference: resolving require(%r)", requirename)
+                module_name = requirename.lstrip("./")
+                if len(tokens) > 2:
+                    symbol = tokens[2]
+                    remaining_tokens = tokens[3:]
+                    _nconsumed = 2
+                else:
+                    symbol = None
+                    remaining_tokens = tokens[2:]
+                    _nconsumed = 1
+                require = FakeImport(variable,
+                                     module=requirename,
+                                     symbol=symbol,
+                                     alias=None)
+                hit, nconsumed = self._hit_from_elem_imports([module_name] + remaining_tokens, require, defn_only=defn_only)
+                if hit is not None:
+                    return hit, nconsumed + _nconsumed
+            raise CodeIntelError("could not resolve require(%r)" % requirename)
         return None, None
 
     def _hit_from_first_part(self, tokens, scoperef, variable=None, defn_only=False):
@@ -581,48 +579,30 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
             if hit is not None:
                 return hit, nconsumed
 
-        elem = self._elem_from_scoperef(scoperef)
-        citdl, citdl_scoperef = elem.get("citdl"), scoperef
-
         while True:
-            if first_token in elem.names:
-                item = elem.names[first_token]
-                if item is not variable:
-                    # TODO: skip __hidden__ names
-                    self.log("is '%s' accessible on %s? yes: %s",
-                            first_token, scoperef, elem.names[first_token])
-                    return (item, scoperef), 1
+            elem, elem_scoperef = self._elem_from_scoperef(scoperef)
+            if elem.get("ilk") in ("interface", "class", "instance", "object"):
+                self.debug("look for %r from imports in %r", tokens, elem)
+                hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
+                if hit is not None:
+                    return hit, nconsumed
+            else:
+                try:
+                    hit, nconsumed = self._hit_from_getattr(tokens, elem, elem_scoperef, variable=variable, defn_only=defn_only)
+                    elem, scoperef = hit
+                    self.log("is '%s' accessible on %s? yes: %s", first_token, scoperef, elem)
+                    return hit, nconsumed
+                except CodeIntelError as ex:
+                    self.log("is '%s' accessible on %s? no", first_token, scoperef)
 
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
-            if hit is not None:
-                self.log("is '%s' accessible on %s? yes: %s",
-                         ".".join(tokens[:nconsumed]), scoperef, hit[0])
-                return hit, nconsumed
-            self.log("is '%s' accessible on %s? no", first_token, scoperef)
-
-            if first_token == elem.get("name") and elem.get("ilk") == "blob":
-                # The element itself is the thing we wanted...
-                self.log("is '%s' accessible on %s? yes: %s",
-                        first_token, scoperef, elem)
-                return (elem, scoperef), 1
+                if first_token == elem.get("name"):
+                    # The element itself is the thing we wanted...
+                    self.log("is '%s' accessible on %s? yes: %s", first_token, scoperef, elem)
+                    return (elem, elem_scoperef), 1
 
             scoperef = self.parent_scoperef_from_scoperef(scoperef)
             if not scoperef:
-                # Scope with citdl type, try fallback to citdl:
-                if citdl:
-                    try:
-                        subhit = self._hit_from_type_inference(citdl, citdl_scoperef, defn_only=defn_only)
-                    except CodeIntelError as ex:
-                        pass
-                    else:
-                        item, itemscoperef = subhit
-                        hit, nconsumed = self._hit_from_first_part(tokens, itemscoperef, defn_only=defn_only)
-                        if hit:
-                            self.log("is '%s' accessible on %s? yes: %s",
-                                    ".".join(tokens[:nconsumed]), citdl_scoperef, hit[0])
-                            return hit, nconsumed
                 return None, None
-            elem = self._elem_from_scoperef(scoperef)
 
     def _set_reldirlib_from_blob(self, blob):
         """Set the relative import directory to be this blob's location."""
@@ -819,11 +799,13 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
         # until we get to the final function/class element that is to be called.
         while elem.tag == "variable":
             elem, scoperef = self._hit_from_variable_type_inference(elem, scoperef, defn_only=defn_only)
+
         ilk = elem.get("ilk")
         if ilk == "class":
             # Return the class element.
             self.log("_hit_from_call: resolved to class instance '%s'", elem.get("name"))
             return (ClassInstance(elem), scoperef)
+
         if ilk == "function":
             citdl = elem.get("returns")
             if citdl:
@@ -837,10 +819,11 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
                             scoperef = args_scoperef
                     except (ValueError, IndexError):
                         pass
-                return self._hit_from_citdl(citdl, scoperef, defn_only=defn_only)
+                return self._hit_from_type_inference(citdl, scoperef, defn_only=defn_only)
+
         raise CodeIntelError("no return type info for %r" % elem)
 
-    def _hit_from_getattr(self, tokens, elem, scoperef, defn_only=False):
+    def _hit_from_getattr(self, tokens, elem, scoperef, variable=None, defn_only=False):
         """Return a hit for a getattr on the given element.
 
         Returns (<hit>, <num-tokens-consumed>) or raises an CodeIntelError.
@@ -852,142 +835,52 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
         # TODO: On failure, call a hook to make an educated guess. Some
         #      attribute names are strong signals as to the object type
         #      -- typically those for common built-in classes.
+
         first_token = tokens[0]
         self.log("resolve getattr '%s' on %r in %r:", first_token, elem, scoperef)
 
-        if elem.tag == "variable":
-            attr = elem.names.get(first_token)
-            if attr is not None:
-                self.log("attr is %r in %r", attr, elem)
-                # update the scoperef, we are now inside the class.
-                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
-                return (attr, scoperef), 1
-
-            citdl = elem.get("citdl")
-            if not citdl:
-                raise CodeIntelError("no type-inference info for %r" % elem)
-            self._check_infinite_recursion(citdl)
-            tokens = list(self._tokenize_citdl_expr(citdl)) + tokens
-            # self.log("citdl tokens: %r", tokens)
-
-            hit, nconsumed = self._hit_from_tokens(tokens, citdl, scoperef, variable=elem, defn_only=defn_only)
-            if hit is not None:
-                return hit, nconsumed
-
-            raise CodeIntelError("could not resolve '%s' getattr on %r in %r"
-                                % (first_token, elem, scoperef))
-
-        assert elem.tag == "scope"
         ilk = elem.get("ilk")
-        if ilk == "function":
-            attr = elem.names.get(first_token)
-            if attr is not None:
-                ilk = elem.get("ilk")
-                if ilk in ("class", "instance", "object", "interface", "function"):
-                    # update the scoperef, we are now inside the function.
-                    scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
-                    return (attr, scoperef), 1
-            # Internal function arguments and variable should
-            # *not* resolve. And we don't support function
-            # attributes.
 
-        elif ilk in ("class", "instance"):
-            attr = elem.names.get(first_token)
-            if attr is not None:
-                self.log("attr is %r in %r", attr, elem)
-                # update the scoperef, we are now inside the class.
+        refs = {
+            "blob": None,
+            "block": None,
+            "function": None,
+            "class": "classrefs",
+            "instance": "classrefs",
+            "interface": "interfacerefs"
+        }.get(ilk, "objectrefs")
+
+        attr = elem.names.get(first_token)
+        if attr is not None and attr is not variable:
+            self.log("attr is %r in %r", attr, elem)
+            if ilk != "blob":
+                # update the scoperef, we are now inside the element.
                 scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
-                return (attr, scoperef), 1
+            return (attr, scoperef), 1
 
-            self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
-            if hit is not None:
-                return hit, nconsumed
+        self.debug("look for %r from imports in %r", tokens, elem)
+        hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
+        if hit is not None:
+            return hit, nconsumed
 
-            for classref in elem.get("classrefs", "").split():
-                try:
-                    self.log("is '%s' from base class: %r?", first_token,
-                             classref)
-                    base_elem, base_scoperef = self._hit_from_type_inference(classref, scoperef, defn_only=defn_only)
-                    return self._hit_from_getattr(tokens, base_elem,
-                                                  base_scoperef, defn_only=defn_only)
-                except CodeIntelError as ex:
-                    self.log("could not resolve classref '%s' on scoperef %r",
-                             classref, scoperef, )
-                    # Was not available, try the next class then.
+        for ref in elem.get(refs, "").split():
+            try:
+                self.log("is '%s' from base %s: %r?", first_token, ilk or elem.tag, ref)
+                hit, nconsumed = self._hit_from_citdl(ref, [], scoperef, variable=elem, defn_only=defn_only)
+                if hit:
+                    return hit, nconsumed
+            except CodeIntelError as ex:
+                self.log("could not resolve ref '%s' on scoperef %r", ref, scoperef)
+                # Was not available, try the next object then.
 
-        elif ilk == "object":
-            attr = elem.names.get(first_token)
-            if attr is not None:
-                self.log("attr is %r in %r", attr, elem)
-                # update the scoperef, we are now inside the object.
-                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
-                return (attr, scoperef), 1
-
-            self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
-            if hit is not None:
-                return hit, nconsumed
-
-            for objectref in elem.get("objectrefs", "").split():
-                try:
-                    self.log("is '%s' from base object: %r?", first_token,
-                             objectref)
-                    base_elem, base_scoperef = self._hit_from_type_inference(objectref, scoperef, defn_only=defn_only)
-                    return self._hit_from_getattr(tokens, base_elem,
-                                                  base_scoperef, defn_only=defn_only)
-                except CodeIntelError as ex:
-                    self.log("could not resolve objectref '%s' on scoperef %r",
-                             objectref, scoperef, )
-                    # Was not available, try the next object then.
-
-        elif ilk == "interface":
-            attr = elem.names.get(first_token)
-            if attr is not None:
-                self.log("attr is %r in %r", attr, elem)
-                # update the scoperef, we are now inside the interface.
-                scoperef = (scoperef[0], scoperef[1] + [elem.get("name")])
-                return (attr, scoperef), 1
-
-            self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
-            if hit is not None:
-                return hit, nconsumed
-
-            for interfaceref in elem.get("interfacerefs", "").split():
-                try:
-                    self.log("is '%s' from base interface: %r?", first_token,
-                             interfaceref)
-                    base_elem, base_scoperef = self._hit_from_type_inference(interfaceref, scoperef, defn_only=defn_only)
-                    return self._hit_from_getattr(tokens, base_elem,
-                                                  base_scoperef, defn_only=defn_only)
-                except CodeIntelError as ex:
-                    self.log("could not resolve interfaceref '%s' on scoperef %r",
-                             interfaceref, scoperef, )
-                    # Was not available, try the next interface then.
-
-        elif ilk == "blob":
-            attr = elem.names.get(first_token)
-            if attr is not None:
-                self.log("attr is %r in %r", attr, elem)
-                return (attr, scoperef), 1
-
-            self.debug("look for %r from imports in %r", tokens, elem)
-            hit, nconsumed = self._hit_from_elem_imports(tokens, elem, defn_only=defn_only)
-            if hit is not None:
-                return hit, nconsumed
-
-        else:
-            raise NotImplementedError("unexpected scope ilk: %r" % ilk)
-
-        # Scope with citdl type:
+        # If there's a citdl type:
         citdl = elem.get("citdl")
         if citdl:
-            elem, scoperef = self._hit_from_type_inference(citdl, scoperef, defn_only)
-            return self._hit_from_getattr(tokens, elem, scoperef, defn_only=defn_only)
+            hit, nconsumed = self._hit_from_citdl(citdl, tokens, scoperef, variable=elem, defn_only=defn_only)
+            if hit:
+                return hit, nconsumed
 
-        raise CodeIntelError("could not resolve '%s' getattr on %r in %r"
-                             % (first_token, elem, scoperef))
+        raise CodeIntelError("could not resolve '%s' getattr on %r in %r" % (first_token, elem, scoperef))
 
     def _hit_from_variable_type_inference(self, elem, scoperef, defn_only=False):
         """Resolve the type inference for 'elem' at 'scoperef'."""
@@ -996,12 +889,12 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
             raise CodeIntelError("no type-inference info for %r" % elem)
         self.log("resolve '%s' type inference for %r:", citdl, elem)
 
-        return self._hit_from_citdl(citdl, scoperef, variable=elem, defn_only=defn_only)
+        return self._hit_from_type_inference(citdl, scoperef, variable=elem, defn_only=defn_only)
 
     def _hit_from_type_inference(self, citdl, scoperef, variable=None, defn_only=False):
         """Resolve the 'citdl' type inference at 'scoperef'."""
         self.log("resolve '%s' type inference:", citdl)
-        return self._hit_from_citdl(citdl, scoperef, variable=variable, defn_only=defn_only)
+        return self._hit_from_citdl(citdl, [], scoperef, variable=variable, defn_only=defn_only)[0]
 
     @property
     def stdlib(self):
@@ -1019,15 +912,7 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
     def parent_scoperef_from_scoperef(self, scoperef):
         blob, lpath = scoperef
         if lpath:
-            parent_lpath = lpath[:-1]
-            if parent_lpath:
-                elem = self._elem_from_scoperef((blob, parent_lpath))
-                if elem.get("ilk") in ("class", "instance"):
-                    # ECMAScript eval shouldn't consider the class-level
-                    # scope as a parent scope when resolving from the
-                    # top-level. (test ecmascript/cpln/skip_class_scope)
-                    parent_lpath = parent_lpath[:-1]
-            return (blob, parent_lpath)
+            return (blob, lpath[:-1])
         elif blob is self._built_in_blob:
             return None
         else:
@@ -1037,7 +922,8 @@ class ECMAScriptTreeEvaluator(TreeEvaluator):
         """A scoperef is (<blob>, <lpath>). Return the actual elem in
         the <blob> ciElementTree being referred to.
         """
-        elem = scoperef[0]
-        for lname in scoperef[1]:
+        blob, lpath = scoperef
+        elem = blob
+        for lname in lpath:
             elem = elem.names[lname]
-        return elem
+        return elem, (blob, lpath[:-1])

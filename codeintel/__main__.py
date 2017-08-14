@@ -94,6 +94,8 @@ class Shell(cmdln.Cmdln):
     def __init__(self, *args, **kwargs):
         cmdln.Cmdln.__init__(self, *args, **kwargs)
 
+        logging.basicConfig(stream=TextStream(sys.stderr))
+
         # Don't redirect output
         os.environ["KOMODO_VERBOSE"] = "1"
 

@@ -204,6 +204,7 @@ class JSDoc(RealJSDoc):
 # ---- internal routines and classes
 def _isobject(namespace):
     return (len(namespace["types"]) == 1 and CITDL_OBJECT in namespace["types"] or (
+        CITDL_MODULE not in namespace["types"] and
         CITDL_CLASS not in namespace["types"] and
         CITDL_INTERFACE not in namespace["types"] and
         CITDL_FUNCTION not in namespace["types"] and
@@ -329,6 +330,9 @@ def _et_data(data):
 def _node_attrs(node, extra_attributes=[], **kw):
     return dict(name=node["name"],
                 line=node.get("line"),
+                lineend=node.get("lineend"),
+                start=node.get("start"),
+                end=node.get("end"),
                 doc=node.get("doc"),
                 attributes=" ".join(node.get("attributes", []) + extra_attributes) or None,
                 **kw)
@@ -456,8 +460,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
     def cix_module(self, node):
         """Emit CIX for the given module namespace."""
-        # log.debug("cix_module(%s, level=%r)", '.'.join(node["nspath"]),
-        # level)
+        # log.debug("cix_module(%s, level=%r)", '.'.join(node["nspath"]), level)
         assert len(node["types"]) == 1 and CITDL_MODULE in node["types"]
         attrs = _node_attrs(node, lang=self.lang, ilk="blob")
         self.emit_start('scope', attrs)
@@ -471,14 +474,14 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         attrs = node
         self.emit_tag('import', attrs)
 
-    def cix_symbols(self, node, parentIsClass=0):
+    def cix_symbols(self, node, parentIsClass=False):
         # Sort variables by line order. This provide the most naturally
         # readable comparison of document with its associate CIX content.
         vars = sorted(list(node.values()), key=lambda v: v.get("line"))
         for var in vars:
             self.cix_symbol(var, parentIsClass)
 
-    def cix_symbol(self, node, parentIsClass=0):
+    def cix_symbol(self, node, parentIsClass=False):
         if _isclass(node):
             self.cix_class(node)
         elif _isinterface(node):
@@ -490,7 +493,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         else:
             self.cix_variable(node, parentIsClass)
 
-    def cix_variable(self, node, parentIsClass=0):
+    def cix_variable(self, node, parentIsClass=False):
         # log.debug("cix_variable(%s, level=%r, parentIsClass=%r)",
         #          '.'.join(node["nspath"]), level, parentIsClass)
         extra_attributes = []
@@ -527,7 +530,6 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         attrs = _node_attrs(node,
                             extra_attributes=extra_attributes,
-                            lineend=node.get("lineend"),
                             signature=node.get("signature"),
                             ilk="class",
                             classrefs=classrefs)
@@ -537,7 +539,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         for import_ in node.get("imports", []):
             self.cix_import(import_)
 
-        self.cix_symbols(node["symbols"], parentIsClass=1)
+        self.cix_symbols(node["symbols"], parentIsClass=True)
 
         self.emit_end('scope')
 
@@ -555,7 +557,6 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         attrs = _node_attrs(node,
                             extra_attributes=extra_attributes,
-                            lineend=node.get("lineend"),
                             signature=node.get("signature"),
                             ilk="interface",
                             interfacerefs=interfacerefs)
@@ -565,7 +566,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         for import_ in node.get("imports", []):
             self.cix_import(import_)
 
-        self.cix_symbols(node["symbols"], parentIsClass=0)
+        self.cix_symbols(node["symbols"])
 
         self.emit_end('scope')
 
@@ -585,7 +586,6 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         required_library_name = node.get("required_library_name")
         attrs = _node_attrs(node,
                             extra_attributes=extra_attributes,
-                            lineend=node.get("lineend"),
                             signature=node.get("signature"),
                             ilk="object",
                             citdl=citdl,
@@ -597,13 +597,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         for import_ in node.get("imports", []):
             self.cix_import(import_)
 
-        self.cix_symbols(node["symbols"], parentIsClass=0)
+        self.cix_symbols(node["symbols"])
 
         self.emit_end('scope')
 
     def cix_argument(self, node):
-        # log.debug("cix_argument(%s, level=%r)", '.'.join(node["nspath"]),
-        # level)
+        # log.debug("cix_argument(%s, level=%r)", '.'.join(node["nspath"]), level)
         extra_attributes = []
 
         citdl = _node_citdl(node)
@@ -628,7 +627,6 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         attrs = _node_attrs(node,
                             extra_attributes=extra_attributes,
-                            lineend=node.get("lineend"),
                             returns=best_citdl,
                             signature=node.get("signature"),
                             ilk="function")
@@ -660,13 +658,15 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         file = self.cix.close()
         return file
 
-    def _parseMemberExpression(self, expr, loc):
+    def _parseMemberExpression(self, expr, base):
         object, _, property = expr.rpartition('.')
         property = esprima.nodes.Identifier(property)
-        property.loc = loc
+        property.loc = base.loc
+        property.range = base.range
         if object:
-            expression = esprima.nodes.StaticMemberExpression(self._parseMemberExpression(object, loc), property)
-            expression.loc = loc
+            expression = esprima.nodes.StaticMemberExpression(self._parseMemberExpression(object, base), property)
+            expression.loc = base.loc
+            expression.range = base.range
             return expression
         return property
 
@@ -726,7 +726,9 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             "symbols": {},
         }
 
-        bodies = node.body and node.body.body
+        bodies = node.body
+        if bodies and not isinstance(bodies, list):
+            bodies = bodies.body
         if bodies and not isinstance(bodies, list):
             bodies = [bodies]
 
@@ -742,9 +744,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         namespace["declaration"] = namespace
         namespace["line"] = node.loc.start.line
+        namespace["start"] = node.range[0]
+        namespace["end"] = node.range[1]
         if bodies:
             lastNode = bodies[-1]
             namespace["lineend"] = lastNode.loc.end.line
+            namespace["end"] = lastNode.range[1]
 
         name = None
         if node._member or node._field:
@@ -816,14 +821,14 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         self.nsstack.pop()
 
         if __EXPORTED__ in extra_attributes:
-            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
-            name = self._parseMemberExpression(namespace["name"], node.loc)
+            default = self._parseMemberExpression("exports." + namespace["name"], node)
+            name = self._parseMemberExpression(namespace["name"], node)
             name._member = default
-            self._visitSimpleAssign(default, name, node.loc.start.line)
+            self._visitSimpleAssign(default, name, node.loc.start.line, node.range[0], node.range[1])
 
     def visit_JSXAttribute(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
-        self._visitAssign(node.name, node.value, node.loc.start.line)
+        self._visitAssign(node.name, node.value, node.loc.start.line, node.range[0], node.range[1])
 
     def visit_ExportAllDeclaration(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -833,6 +838,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         exports["required_library_name"] = node.source.value
         if "line" not in exports:
             exports["line"] = node.loc.start.line
+            exports["start"] = node.range[0]
+            exports["end"] = node.range[1]
 
         self.generic_visit(node)
 
@@ -856,10 +863,14 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 variable, citdl = self._resolveObjectRef(declaration)
                 if variable:
                     line = variable.get('line', node.loc.start.line)
+                    start = variable.get('start', node.range[0])
+                    end = variable.get('end', node.range[1])
                 else:
                     line = node.loc.start.line
+                    start = node.range[0]
+                    end = node.range[1]
 
-                self._visitAssign(specifier.exported, declaration, line, extra_attributes=["__no_defn__"])
+                self._visitAssign(specifier.exported, declaration, line, start, end, extra_attributes=["__no_defn__"])
 
         self.nsstack.pop()
 
@@ -884,7 +895,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         exports, citdl = self._resolveObjectRef(u"exports")
         self.nsstack.append(exports)
 
-        default = self._parseMemberExpression(u"default", node.loc)
+        default = self._parseMemberExpression(u"default", node)
         node.declaration._field = default
         typ = node.declaration.type
         if typ is esprima.Syntax.AssignmentExpression:
@@ -898,9 +909,13 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         variable, citdl = self._resolveObjectRef(declaration)
         if variable:
             line = variable.get('line', node.loc.start.line)
+            start = variable.get('start', node.range[0])
+            end = variable.get('end', node.range[1])
         else:
             line = node.loc.start.line
-        self._visitSimpleAssign(default, declaration, line, extra_attributes=["__no_defn__"])
+            start = node.range[0]
+            end = node.range[1]
+        self._visitSimpleAssign(default, declaration, line, start, end)
 
         self.nsstack.pop()
 
@@ -910,6 +925,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             if prop.type is esprima.Syntax.Property and not prop.computed:
                 prop.value._member = esprima.nodes.StaticMemberExpression(prop.value, prop.key)
                 prop.value._member.loc = prop.value.loc
+                prop.value._member.range = prop.value.range
 
         self._visitObject(node)
 
@@ -924,10 +940,10 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         self.nsstack.pop()
 
         if __EXPORTED__ in extra_attributes:
-            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
-            name = self._parseMemberExpression(namespace["name"], node.loc)
+            default = self._parseMemberExpression("exports." + namespace["name"], node)
+            name = self._parseMemberExpression(namespace["name"], node)
             name._member = default
-            self._visitSimpleAssign(default, name, node.loc.start.line)
+            self._visitSimpleAssign(default, name, node.loc.start.line, node.range[0], node.range[1])
 
     def visit_Property(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -936,7 +952,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             node.value.leadingComments = node.leadingComments
         self.generic_visit(node)
         if not node.computed:
-            self._visitSimpleAssign(node.key, node.value, node.loc.start.line)
+            self._visitSimpleAssign(node.key, node.value, node.loc.start.line, node.range[0], node.range[1])
 
     def visit_SpreadElement(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -980,10 +996,10 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         self.nsstack.pop()
 
         if __EXPORTED__ in extra_attributes:
-            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
-            name = self._parseMemberExpression(namespace["name"], node.loc)
+            default = self._parseMemberExpression("exports." + namespace["name"], node)
+            name = self._parseMemberExpression(namespace["name"], node)
             name._member = default
-            self._visitSimpleAssign(default, name, node.loc.start.line)
+            self._visitSimpleAssign(default, name, node.loc.start.line, node.range[0], node.range[1])
 
     def _visitInterface(self, node, extra_attributes=[]):
         parent = self.nsstack[-1]
@@ -1005,15 +1021,15 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         self.nsstack.pop()
 
         if __EXPORTED__ in extra_attributes:
-            default = self._parseMemberExpression("exports." + namespace["name"], node.loc)
-            name = self._parseMemberExpression(namespace["name"], node.loc)
+            default = self._parseMemberExpression("exports." + namespace["name"], node)
+            name = self._parseMemberExpression(namespace["name"], node)
             name._member = default
-            self._visitSimpleAssign(default, name, node.loc.start.line)
+            self._visitSimpleAssign(default, name, node.loc.start.line, node.range[0], node.range[1])
 
     def visit_FieldDefinition(self, node):
         if node.value:
             node.value.static = node.static
-            self._visitSimpleAssign(node.key, node.value, node.loc.start.line)
+            self._visitSimpleAssign(node.key, node.value, node.loc.start.line, node.range[0], node.range[1])
         else:
             self.generic_visit(node)
 
@@ -1070,9 +1086,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         namespace["declaration"] = namespace
         namespace["line"] = node.loc.start.line
+        namespace["start"] = node.range[0]
+        namespace["end"] = node.range[1]
         if bodies:
             lastNode = bodies[-1]
             namespace["lineend"] = lastNode.loc.end.line
+            namespace["end"] = lastNode.range[1]
 
         name = None
         if node._member or node._field:
@@ -1119,6 +1138,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         for idx, param in enumerate(node.params, 1):
             argument = {"types": OrderedDict({"__arg%s" % idx: 0}),
                         "line": node.loc.start.line,
+                        "start": node.range[0],
+                        "end": node.range[1],
                         "symbols": {},
                         "argument": True}
             typ = param.type
@@ -1128,6 +1149,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                     if p.type is esprima.Syntax.Property and not p.computed:
                         argument = {"types": OrderedDict({"__arg%s.%s" % (idx, p.key.name): 0}),
                                     "line": node.loc.start.line,
+                                    "start": node.range[0],
+                                    "end": node.range[1],
                                     "symbols": {},
                                     "argument": True}
                         argName = self._getExprRepr(p.value)
@@ -1143,6 +1166,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 for i, e in enumerate(param.elements):
                     argument = {"types": OrderedDict({"__arg%s[%s]" % (idx, i): 0}),
                                 "line": node.loc.start.line,
+                                "start": node.range[0],
+                                "end": node.range[1],
                                 "symbols": {},
                                 "argument": True}
                     argName = self._getExprRepr(e)
@@ -1197,6 +1222,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                     "nspath": nspath + ("this",),
                     "types": OrderedDict(),
                     "line": node.loc.start.line,
+                    "start": node.range[0],
+                    "end": node.range[1],
                     "symbols": {},
                     "argument": True,
                     }
@@ -1237,10 +1264,10 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 self._promoteToClass(namespace)
 
         if __EXPORTED__ in extra_attributes:
-            default = self._parseMemberExpression("exports." + name, node.loc)
-            name = self._parseMemberExpression(name, node.loc)
+            default = self._parseMemberExpression("exports." + name, node)
+            name = self._parseMemberExpression(name, node)
             name._member = default
-            self._visitSimpleAssign(default, name, node.loc.start.line)
+            self._visitSimpleAssign(default, name, node.loc.start.line, node.range[0], node.range[1])
 
     def visit_CallExpression(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -1283,6 +1310,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                         imports = namespace.setdefault("imports", [])
                         import_ = {"module": module}
                         import_["line"] = node.loc.start.line
+                        import_["start"] = node.range[0]
+                        import_["end"] = node.range[1]
                         import_["alias"] = name
                         if name == "exports":
                             import_["symbol"] = "*"
@@ -1293,7 +1322,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                             node._field._required_library_name = module
 
                     elif isInteropRequireDefault:
-                        node._node = self._parseMemberExpression(module, node.loc)
+                        node._node = self._parseMemberExpression(module, node)
 
         self.generic_visit(node)
 
@@ -1308,6 +1337,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         for specifier in node.specifiers:
             import_ = {"module": module}
             import_["line"] = specifier.loc.start.line
+            import_["start"] = specifier.range[0]
+            import_["end"] = specifier.range[1]
             if specifier.imported:
                 import_["symbol"] = specifier.imported.name
                 if specifier.local and specifier.local.name != specifier.imported.name:
@@ -1340,7 +1371,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         constructor = {}
         for k in list(variable):
             # copy line to constructor:
-            if k in ("line", "lineend"):
+            if k in ("line", "lineend", "start", "end"):
                 constructor[k] = variable[k]
             # Move almost everything to constructor
             elif k not in ("name", "nspath", "declaration", "attributes"):
@@ -1385,6 +1416,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 "nspath": constructor["nspath"] + ("this",),
                 "types": OrderedDict(),
                 "line": constructor["line"],
+                "start": constructor["start"],
+                "end": constructor["end"],
                 "symbols": {},
                 "argument": True,
                 }
@@ -1409,8 +1442,10 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             elif node.object.type is esprima.Syntax.Identifier:
                 n = esprima.nodes.ClassBody([])
                 n.loc = node.loc
+                n.range = node.range
                 n = esprima.nodes.ClassDeclaration(node.object, None, n)
                 n.loc = node.loc
+                n.range = node.range
                 self.visit(n)
 
         self.generic_visit(node)
@@ -1431,7 +1466,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         for declaration in node.declarations:
             if declaration.init:
                 declaration.init._field = declaration.id
-            self._visitAssign(declaration.id, declaration.init, declaration.loc.start.line, extra_attributes=extra_attributes)
+            self._visitAssign(declaration.id, declaration.init, declaration.loc.start.line, declaration.range[0], declaration.range[1], extra_attributes=extra_attributes)
 
     def visit_AssignmentExpression(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -1446,12 +1481,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         else:
             node.right._field = node.left
         if node.operator == '=':
-            self._visitAssign(node.left, node.right, node.loc.start.line, extra_attributes=extra_attributes)
+            self._visitAssign(node.left, node.right, node.loc.start.line, node.range[0], node.range[1], extra_attributes=extra_attributes)
         else:
             log.info("_visitAssignmentExpression:: skipping unknown operator: %r", node.operator)
             self.generic_visit(node)
 
-    def _visitAssign(self, lhsNode, rhsNode, lineno, extra_attributes=[]):
+    def _visitAssign(self, lhsNode, rhsNode, lineno, start, end, extra_attributes=[]):
         log.debug("_visitAssign(lhsNode=%r, rhsNode=%r)", lhsNode, rhsNode)
         typ = getattr(lhsNode, 'type', type(lhsNode))
 
@@ -1483,7 +1518,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             #   foo = ...       (Identifier)
             #   foo.bar = ...   (MemberExpression)
             #   foo[1] = ...    (MemberExpression)
-            self._visitSimpleAssign(lhsNode, rhsNode, lineno, extra_attributes=extra_attributes)
+            self._visitSimpleAssign(lhsNode, rhsNode, lineno, start, end, extra_attributes=extra_attributes)
 
         elif typ is esprima.Syntax.ArrayPattern:
             # E.g.:
@@ -1497,12 +1532,15 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 if rtyp is esprima.Syntax.Identifier:
                     right = esprima.nodes.ComputedMemberExpression(rhsNode, esprima.nodes.Literal(i, "%d" % i))
                     right.loc = rhsNode.loc
+                    right.range = rhsNode.range
                 elif rtyp is esprima.Syntax.MemberExpression:
                     right = esprima.nodes.ComputedMemberExpression(rhsNode, esprima.nodes.Literal(i, "%d" % i))
                     right.loc = rhsNode.loc
+                    right.range = rhsNode.range
                 elif rtyp is esprima.Syntax.CallExpression:
                     right = esprima.nodes.ComputedMemberExpression(rhsNode, esprima.nodes.Literal(i, "%d" % i))
                     right.loc = rhsNode.loc
+                    right.range = rhsNode.range
                 if rtyp is esprima.Syntax.ArrayExpression:
                     right = rhsNode.elements[i] if i < rhsNumElements else None
                 elif rtyp is esprima.Syntax.ObjectExpression:
@@ -1510,7 +1548,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 else:
                     log.info("visitAssign:: skipping unknown rhsNode type: %s", rtyp)
                     break
-                self._visitSimpleAssign(left, right, lineno, extra_attributes=extra_attributes)
+                self._visitSimpleAssign(left, right, lineno, start, end, extra_attributes=extra_attributes)
 
         elif typ is esprima.Syntax.ObjectPattern:
             # E.g.:
@@ -1525,12 +1563,15 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 if rtyp is esprima.Syntax.Identifier:
                     right = esprima.nodes.StaticMemberExpression(rhsNode, prop.key)
                     right.loc = rhsNode.loc
+                    right.range = rhsNode.range
                 elif rtyp is esprima.Syntax.MemberExpression:
                     right = esprima.nodes.StaticMemberExpression(rhsNode, prop.key)
                     right.loc = rhsNode.loc
+                    right.range = rhsNode.range
                 elif rtyp is esprima.Syntax.CallExpression:
                     right = esprima.nodes.StaticMemberExpression(rhsNode, prop.key)
                     right.loc = rhsNode.loc
+                    right.range = rhsNode.range
                 elif rtyp is esprima.Syntax.ObjectExpression:
                     right = rhsProperties.get(prop.key.name)
                 elif rtyp is esprima.Syntax.ArrayExpression:
@@ -1538,12 +1579,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 else:
                     log.info("visitAssign:: skipping unknown rhsNode type: %s", rtyp)
                     break
-                self._visitSimpleAssign(left, right, lineno, extra_attributes=extra_attributes)
+                self._visitSimpleAssign(left, right, lineno, start, end, extra_attributes=extra_attributes)
 
         else:
             raise ESCILEError("unexpected type of LHS of assignment: %s" % typ)
 
-    def _visitSimpleAssign(self, lhsNode, rhsNode, line, extra_attributes=[]):
+    def _visitSimpleAssign(self, lhsNode, rhsNode, line, start, end, extra_attributes=[]):
         """Handle a simple assignment: assignment to a symbol name or to
         an attribute of a symbol name. If the given left-hand side (lhsNode)
         is not an node type that can be handled, it is dropped.
@@ -1557,7 +1598,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
             # Assign this to the local namespace, unless there was a
             # 'global' statement. (XXX Not handling 'global' yet.)
             varName = lhsNode.name
-            self._assignVariable(varName, ns, rhsNode, line, isClassVar=_isclass(ns), extra_attributes=extra_attributes)
+            self._assignVariable(varName, ns, rhsNode, line, start, end, isClassVar=_isclass(ns), extra_attributes=extra_attributes)
 
         elif typ is esprima.Syntax.MemberExpression:
             if lhsNode.computed:
@@ -1588,12 +1629,12 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                     self.nsstack.append(namespace)
                     typ = rhsNode.type
                     if typ is esprima.Syntax.Literal:
-                        self._assignVariable(lhsNode.property.name, namespace, rhsNode, line, isClassVar=False, extra_attributes=extra_attributes)
+                        self._assignVariable(lhsNode.property.name, namespace, rhsNode, line, start, end, isClassVar=False, extra_attributes=extra_attributes)
                     elif typ is esprima.Syntax.ObjectExpression:
                         for prop in rhsNode.properties:
                             if prop.type is esprima.Syntax.Property:
                                 if not prop.computed:
-                                    self._assignVariable(prop.key.name, namespace, prop.value, prop.loc.start.line, isClassVar=False)
+                                    self._assignVariable(prop.key.name, namespace, prop.value, prop.loc.start.line, prop.range[0], prop.range[1], isClassVar=False)
                                 else:
                                     # We don't bother with these: too hard.
                                     log.info("simpleAssign:: skipping computed - too hard")
@@ -1609,6 +1650,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                                 "nspath": ns["nspath"] + ("this",),
                                 "types": OrderedDict(),
                                 "line": ns.get("line", line),
+                                "start": ns.get("start", start),
+                                "end": ns.get("end", end),
                                 "symbols": {},
                                 "argument": True,
                                 }
@@ -1618,7 +1661,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                     ns["symbols"]["this"] = variable
 
                 if variable:
-                    self._assignVariable(lhsNode.property.name, variable["declaration"], rhsNode, line, extra_attributes=extra_attributes)
+                    self._assignVariable(lhsNode.property.name, variable["declaration"], rhsNode, line, start, end, extra_attributes=extra_attributes)
         else:
             log.debug("could not handle simple assign (module '%s'): "
                       "lhsNode=%r, rhsNode=%r", self.moduleName, lhsNode,
@@ -1631,7 +1674,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 varTypes[CITDL_REQUIRE] = 0
             rhsNode._assignee["required_library_name"] = lhsNode._required_library_name
 
-    def _assignVariable(self, varName, namespace, rhsNode, line, isClassVar=False, extra_attributes=[]):
+    def _assignVariable(self, varName, namespace, rhsNode, line, start, end, isClassVar=False, extra_attributes=[]):
         """Handle a simple variable name assignment.
 
             "varName" is the variable name being assign to.
@@ -1643,7 +1686,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                 a class variable, as opposed to an instance variable
         """
         nspath = namespace["nspath"]
-        log.debug("_assignVariable(varName=%r, namespace %s, rhsNode=%r, line, isClassVar=%r)",
+        log.debug("_assignVariable(varName=%r, namespace %s, rhsNode=%r, line, start, end, isClassVar=%r)",
                   varName, ".".join(nspath), rhsNode, isClassVar)
         variable = namespace["symbols"].get(varName, None)
 
@@ -1664,6 +1707,8 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                                 "nspath": variable["nspath"] + ("this",),
                                 "types": OrderedDict(),
                                 "line": variable.get("line", line),
+                                "start": variable.get("start", start),
+                                "end": variable.get("end", end),
                                 "symbols": {},
                                 "argument": True,
                                 }
@@ -1690,12 +1735,16 @@ class AST2CIXVisitor(esprima.NodeVisitor):
 
         if line and "line" not in variable:
             variable["line"] = line
+            variable["start"] = start
+            variable["end"] = end
 
         if isClassVar and "is-class-var" not in variable and rhsNode and (rhsNode.static is None or rhsNode.static):
             variable["is-class-var"] = True
             # line number of first class-level assignment wins
             if line:
                 variable["line"] = line
+                variable["start"] = start
+                variable["end"] = end
 
         variable.setdefault("attributes", []).extend(extra_attributes)
 
@@ -1726,22 +1775,22 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                     self._promoteToClass(variable)
 
             if __EXPORTED__ in extra_attributes:
-                default = self._parseMemberExpression("exports." + varName, rhsNode.loc)
-                name = self._parseMemberExpression(varName, rhsNode.loc)
+                default = self._parseMemberExpression("exports." + varName, rhsNode)
+                name = self._parseMemberExpression(varName, rhsNode)
                 name._member = default
-                self._visitSimpleAssign(default, name, rhsNode.loc.start.line)
+                self._visitSimpleAssign(default, name, rhsNode.loc.start.line, rhsNode.range[0], rhsNode.range[1])
 
         namespace["symbols"][varName] = variable  # Must be added to symbols after guessing types
 
         return variable
 
-    def _handleUnknownAssignment(self, lhsNode, rhsNode, lineno):
+    def _handleUnknownAssignment(self, lhsNode, rhsNode, lineno, start, end):
         typ = getattr(lhsNode, 'type', type(lhsNode))
         if typ in (esprima.Syntax.Identifier, esprima.JSXSyntax.JSXIdentifier):
-            self._visitSimpleAssign(lhsNode, rhsNode, lineno)
+            self._visitSimpleAssign(lhsNode, rhsNode, lineno, start, end)
         elif typ is esprima.Syntax.ArrayExpression:
             for anode in lhsNode.elements:
-                self._visitSimpleAssign(anode, rhsNode, lineno)
+                self._visitSimpleAssign(anode, rhsNode, lineno, start, end)
 
     def visit_TryStatement(self, node):
         log.info("visit_%s:%s: %r %r", node.__class__.__name__, node.loc.start.line, self.lines and node.loc.start.line and self.lines[node.loc.start.line - 1], node.keys())
@@ -1750,7 +1799,7 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         if node.handler:
             self.visit(node.handler)
             if node.handler.param:
-                self._handleUnknownAssignment(node.handler.param, None, node.handler.loc.start.line)
+                self._handleUnknownAssignment(node.handler.param, None, node.handler.loc.start.line, node.handler.range[0], node.handler.range[1])
 
         self.visit(node.finalizer)
 
@@ -1793,7 +1842,9 @@ class AST2CIXVisitor(esprima.NodeVisitor):
                                    "types": OrderedDict({CITDL_OBJECT: 0, CITDL_INSTANCE: 0}),
                                    "symbols": {},
                                    "attributes": [__LOCAL__],
-                                   "line": 0}
+                                   "line": 0,
+                                   "start": 0,
+                                   "end": 0}
                         exports["declaration"] = exports
                         module["symbols"]["exports"] = exports
                     else:
@@ -2274,12 +2325,12 @@ def scan_et(content, filename, md5sum=None, mtime=None, lang="ECMAScript", trace
         path = filename
 
     options = {
-        'jsx': True,
-        'classProperties': True,
+        'esnext': True,
         'tolerant': True,
         'sourceType': 'module',
         'attachComment': True,
         'loc': True,
+        'range': True,
     }
 
     moduleName = os.path.splitext(os.path.basename(filename))[0]
