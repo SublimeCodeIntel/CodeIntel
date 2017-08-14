@@ -18,8 +18,12 @@
 # Portions created by ActiveState Software Inc are Copyright (C) 2000-2007
 # ActiveState Software Inc. All Rights Reserved.
 #
+# Portions created by German Mendez Bravo (Kronuz) are Copyright (C) 2017
+# German Mendez Bravo (Kronuz). All Rights Reserved.
+#
 # Contributor(s):
 #   ActiveState Software Inc
+#   German Mendez Bravo (Kronuz) (german.mb@gmail.com)
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
