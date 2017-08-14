@@ -239,6 +239,23 @@ class Driver(threading.Thread):
                       completed=len(self._completed_dirs),
                       total=len(self._dirs))
 
+        def onScanFile(self, description, file_path, current=None, total=None):
+            """Called when a directory is being scanned (out of possibly many)
+            @param description {unicode} A string suitable for showing the user
+                    regarding the progress
+            @param dir {unicode} The directory currently being scanned
+            @param current {int} The current progress
+            @param total {int} The total number of directories to scan in this
+                    request
+            """
+            self.debug("scan file: %s (%s %s/%s)",
+                      description, file_path, current, total)
+
+            assert file_path, "onScanDirectory got no directory"
+            self.send(type="scan-progress", message=description,
+                      completed=current,
+                      total=total)
+
         def onScanComplete(self, dirs=set(), scanned=set()):
             """Called when a scan operation is complete
             @param dirs {set of unicode} The directories that were intially

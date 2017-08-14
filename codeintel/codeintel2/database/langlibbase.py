@@ -61,7 +61,7 @@ class LangDirsLibBase(object):
                                                  len(dirs))
                 except:
                     pass # eat any errors about reporting progress
-                self.ensure_dir_scanned(dir, ctlr=ctlr, reporter=lambda msg: None)
+                self.ensure_dir_scanned(dir, ctlr=ctlr)
                 scanned.add(dir)
         finally:
             # report that we have stopped scanning
@@ -79,20 +79,27 @@ class LangDirsLibBase(object):
         if dir not in self._have_ensured_scanned_from_dir_cache:
             if reporter is None:
                 reporter = self.lang_zone.db.event_reporter
-            if not callable(reporter):
-                reporter = None
             res_index = self.lang_zone.load_index(dir, "res_index", {})
             importables = self._importables_from_dir(dir)
             importable_values = [i[0] for i in importables.values()
                                  if i[0] is not None]
+            removed_values = set(res_index.keys()).difference(importable_values)
+            current = 0
+            total = len(importable_values) + len(removed_values)
             for base in importable_values:
                 if ctlr and ctlr.is_aborted():
                     log.debug("ctlr aborted")
                     return
+                current += 1
                 if base not in res_index:
-                    if reporter:
-                        reporter("scanning %s files in '%s'" % (self.lang, dir))
-                        reporter = None # don't report again
+                    if reporter and hasattr(reporter, "onScanFile"):
+                        try:
+                            reporter.onScanFile("Scanning %s file '%s'" % (self.lang, join(dir, base)),
+                                                dir,
+                                                current,
+                                                total)
+                        except:
+                            pass  # eat any errors about reporting progress
                     try:
                         buf = self.mgr.buf_from_path(join(dir, base),
                                                      lang=self.lang)
@@ -106,14 +113,19 @@ class LangDirsLibBase(object):
                     buf.scan_if_necessary()
 
             # Remove scanned paths that don't exist anymore.
-            removed_values = set(res_index.keys()).difference(importable_values)
             for base in removed_values:
                 if ctlr and ctlr.is_aborted():
                     log.debug("ctlr aborted")
                     return
-                if reporter:
-                    reporter("scanning %s files in '%s'" % (self.lang, dir))
-                    reporter = None # don't report again
+                current += 1
+                if reporter and hasattr(reporter, "onScanFile"):
+                    try:
+                        reporter.onScanFile("Scanning %s file '%s'" % (self.lang, join(dir, base)),
+                                            dir,
+                                            current,
+                                            total)
+                    except:
+                        pass  # eat any errors about reporting progress
                 basename = join(dir, base)
                 self.lang_zone.remove_path(basename)
 
