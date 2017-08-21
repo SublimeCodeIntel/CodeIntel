@@ -818,6 +818,8 @@ class CodeIntelManager(threading.Thread):
         calling thread until the data has been written (though possibly not yet
         received on the other end).
         """
+        if not self.pipe:
+            return
         req_id = hex(self._next_id)
         kwargs['req_id'] = req_id
         text = json.dumps(kwargs, separators=(',', ':'))
