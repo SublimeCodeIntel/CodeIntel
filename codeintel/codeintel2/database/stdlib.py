@@ -297,7 +297,7 @@ class StdLibsZone(object):
         #              ((5,3), "php-5.3")
         #         ],
         #    "ruby": [
-        #              (None, "ruby"),
+        #              ((0,0), "ruby"),
         #         ],
         #    ...
         #  }
@@ -314,7 +314,7 @@ class StdLibsZone(object):
                     ver = _ver_from_ver_str(ver_str)
                 else:
                     base = name
-                    ver = None
+                    ver = (0, 0)
                 if base.lower() != lang.lower():
                     # Only process when the base name matches the language.
                     # I.e. skip if base is "python3" and lang is "python".
@@ -383,7 +383,7 @@ class StdLibsZone(object):
 
         # Here is something like what we have for PHP:
         #    vers_and_names = [
-        #        (None, "php"),
+        #        ((0,0), "php"),
         #        ((4,0), "php-4.0"),
         #        ((4,1), "php-4.1"),
         #        ((4,2), "php-4.2"),
@@ -508,7 +508,7 @@ class StdLibsZone(object):
         if progress_cb:
             try:    progress_cb("Determining necessary updates...", 5)
             except: log.exception("error in progress_cb (ignoring)")
-        if ver is not None:
+        if ver != (0, 0):
             ver_str = ".".join(map(str, ver))
             cix_path = join(self.stdlibs_dir,
                             "%s-%s.cix" % (safe_lang_from_lang(lang), ver_str))
@@ -539,7 +539,7 @@ class StdLibsZone(object):
 
     def update_lang(self, lang, progress_cb=None, ver=None):
         vers_and_names = self.vers_and_names_from_lang(lang)
-        if ver is not None:
+        if ver != (0, 0):
             ver = _ver_from_ver_str(ver)
             key = (ver, "zzz") # 'zzz' > any stdlib name (e.g., 'zzz' > 'php-4.2')
             idx = max(0, bisect.bisect_right(vers_and_names, key)-1)
