@@ -508,15 +508,15 @@ class Driver(threading.Thread):
                 self.quit = True
                 break
             if ch == b'{':
-                size = int(buf, 10)
+                length = int(buf, 10)
                 try:
                     buf = ch
-                    while len(buf) < size:
-                        last_size = len(buf)
-                        buf += self.fd_in.read(size - len(buf))
-                        if len(buf) == last_size:
+                    while len(buf) < length:
+                        data = self.fd_in.read(length - len(buf))
+                        if not data:
                             # nothing read, EOF
                             raise IOError("Failed to read frame from socket")
+                        buf += data
                 except IOError:
                     log.debug("Failed to read frame data, assuming connection died")
                     self.quit = True

@@ -218,8 +218,8 @@ class ECMAScriptLangIntel(CitadelLangIntel,
                           PythonCITDLExtractorMixin):
     lang = lang
     interpreterPrefName = "node"
-    extraPathsPrefName = "esExtraPaths"
-    excludePathsPrefName = "esExcludePaths"
+    extraPathsPrefName = "ecmascriptExtraPaths"
+    excludePathsPrefName = "ecmascriptExcludePaths"
 
     # Define the trigger chars we use, used by ProgLangTriggerIntelMixin
     trg_chars = tuple(".(,@'\" ")

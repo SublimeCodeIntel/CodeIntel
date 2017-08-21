@@ -55,8 +55,14 @@ class DummyStream(object):
 
 
 class BinaryStream(object):
-    def __init__(self, stream):
-        self.stream = stream
+    def __init__(self, stream=None):
+        self._stream = stream
+
+    @property
+    def stream(self):
+        if self._stream is not None:
+            return self._stream
+        return sys.stderr
 
     def encode(self, message):
         if isinstance(message, six.text_type):
@@ -94,7 +100,7 @@ class Shell(cmdln.Cmdln):
     def __init__(self, *args, **kwargs):
         cmdln.Cmdln.__init__(self, *args, **kwargs)
 
-        logging.basicConfig(stream=TextStream(sys.stderr))
+        logging.basicConfig(stream=TextStream())
 
         # Don't redirect output
         os.environ["KOMODO_VERBOSE"] = "1"
@@ -197,19 +203,14 @@ class Shell(cmdln.Cmdln):
             logging.getLogger('codeintel').setLevel(logging.DEBUG)
 
     def set_log_file(self, option, opt_str, value, parser):
-        if value in ('stdout', '/dev/stdout'):
-            stream = sys.stdout
-        elif value in ('stderr', '/dev/stderr'):
-            stream = sys.stderr
-        else:
+        if value not in ('stdout', '/dev/stdout', 'stderr', '/dev/stderr'):
             log_dir = os.path.dirname(value)
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             stream = open(value, 'wt')
-        logging.getLogger().addHandler(logging.StreamHandler(stream=TextStream(stream)))
-        # XXX marky horrible ugly hack
-        sys.stderr = stream
-        sys.stdout = stream
+            # XXX marky horrible ugly hack
+            sys.stderr = stream
+            sys.stdout = stream
 
     def get_optparser(self):
         optparser = cmdln.Cmdln.get_optparser(self)
