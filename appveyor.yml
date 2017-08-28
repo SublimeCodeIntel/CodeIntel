@@ -18,38 +18,50 @@ environment:
     - PYTHON: "C:\\Python27-x64"
       PYTHON_VERSION: "2.7"
       PYTHON_ARCH: "64"
+      REDIST: "x64"
     - PYTHON: "C:\\Python27"
       PYTHON_VERSION: "2.7"
+      REDIST: "x86"
 
     - PYTHON: "C:\\Python36-x64"
       PYTHON_VERSION: "3.6"
       PYTHON_ARCH: "64"
+      REDIST: "x64"
     - PYTHON: "C:\\Python36"
       PYTHON_VERSION: "3.6"
+      REDIST: "x86"
 
     - PYTHON: "C:\\Python26-x64"
       PYTHON_VERSION: "2.6"
       PYTHON_ARCH: "64"
+      REDIST: "x64"
     - PYTHON: "C:\\Python26"
       PYTHON_VERSION: "2.6"
+      REDIST: "x86"
 
     - PYTHON: "C:\\Python35-x64"
       PYTHON_VERSION: "3.5"
       PYTHON_ARCH: "64"
+      REDIST: "x64"
     - PYTHON: "C:\\Python35"
       PYTHON_VERSION: "3.5"
+      REDIST: "x86"
 
     - PYTHON: "C:\\Python34-x64"
       PYTHON_VERSION: "3.4"
       PYTHON_ARCH: "64"
+      REDIST: "x64"
     - PYTHON: "C:\\Python34"
       PYTHON_VERSION: "3.4"
+      REDIST: "x86"
 
     - PYTHON: "C:\\Python33-x64"
       PYTHON_VERSION: "3.3"
       PYTHON_ARCH: "64"
+      REDIST: "x64"
     - PYTHON: "C:\\Python33"
       PYTHON_VERSION: "3.3"
+      REDIST: "x86"
 
 install:
   # Set path again, need to find a way to avoid doing this again
@@ -76,6 +88,8 @@ after_test:
   # Again, you only need "%CMD_IN_ENV%" if you're building C extensions for
   # 64-bit Python 3.3/3.4. And you need to use %PYTHON% to get the correct
   # interpreter
+
+  - copy /Y /B "C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\redist\\%REDIST%\\Microsoft.VC140.CRT\\MSVCP140.DLL" "codeintel\\SilverCity\\"
   - "%CMD_IN_ENV% python setup.py bdist_wheel"
 
 # artifacts:

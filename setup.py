@@ -297,6 +297,7 @@ TemplateToolkit, PHP, C/C++, Objective-C.""",
     ],
     package_data={
         '': (
+            package_files('codeintel/SilverCity/*.DLL') +  # Windows' MSVCP140.DLL
             package_files('codeintel/codeintel2/lexers/*.lexres') +
             package_files('codeintel/codeintel2/catalogs/*.cix') +
             package_files('codeintel/codeintel2/stdlibs/*.cix') +
