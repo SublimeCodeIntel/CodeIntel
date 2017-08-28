@@ -5,6 +5,7 @@ cd /io/
 
 # Compile wheels
 for PYBIN in /opt/python/cp${PYTHON_VERSION}*/bin; do
+    rm -rf "build"
     "${PYBIN}/python" setup.py bdist_wheel
 done
 
