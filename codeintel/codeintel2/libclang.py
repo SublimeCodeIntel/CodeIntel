@@ -177,9 +177,7 @@ class ClangCompleter(object):
                 suggestion = "Are you sure '%s' contains libclang?" % library_path
             else:
                 suggestion = "Consider setting library_path."
-            self.log.exception(e)
-
-            print("Loading libclang failed, completion won't be available:", suggestion)
+            self.log.error(suggestion)
             return
 
         # Builtin Header Path
@@ -188,9 +186,7 @@ class ClangCompleter(object):
             self.builtin_header_path = self._getBuiltinHeaderPath(library_path)
 
             if not self.builtin_header_path:
-                print("WARNING: libclang can not find the builtin includes.")
-                print("         This will cause slow code completion.")
-                print("         Please report the problem.")
+                self.log.warn("libclang can not find the builtin includes. This will cause slow code completion. Please report the problem.")
 
         self.translationUnits = {}
         if compilation_database_path:
@@ -370,7 +366,6 @@ class ClangCompleter(object):
         }
 
     def _getCurrentTranslationUnit(self, args, fileName, fileBuffer=None, update=False):
-        print('translationUnits args:', args)
         unsaved_files = [(fileName, encode(fileBuffer))] if fileBuffer else None
 
         tu = self.translationUnits.get(fileName)
@@ -414,13 +409,13 @@ class ClangCompleter(object):
         with self.libclangLock:
             tu = self._getCurrentTranslationUnit(params['args'], fileName, fileBuffer)
             if tu is None:
-                print("Couldn't get the TranslationUnit")
+                self.log.info("Couldn't get the TranslationUnit. The following arguments are used for clang: %s", " ".join(decode(params['args'])))
                 return None
 
             unsaved_files = [(fileName, encode(fileBuffer))] if fileBuffer else None
             cr = tu.codeComplete(fileName, line, column, unsaved_files=unsaved_files, include_macros=include_macros, include_code_patterns=include_code_patterns, include_brief_comments=include_brief_comments)
             if cr is None:
-                print("Cannot parse this source file. The following arguments are used for clang: " + " ".join(decode(params['args'])))
+                self.log.info("Cannot parse this source file. The following arguments are used for clang: %s", " ".join(decode(params['args'])))
                 return None
 
             results = cr.results
@@ -445,7 +440,7 @@ class ClangCompleter(object):
         with self.libclangLock:
             tu = self._getCurrentTranslationUnit(params['args'], fileName, fileBuffer, update=True)
             if tu is None:
-                print("Couldn't get the TranslationUnit")
+                self.log.info("Couldn't get the TranslationUnit. The following arguments are used for clang: %s", " ".join(decode(params['args'])))
                 return None
 
             f = cindex.File.from_name(tu, fileName)
