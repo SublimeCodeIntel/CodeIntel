@@ -503,7 +503,7 @@ class Driver(threading.Thread):
                 log.debug("Failed to read frame length, assuming connection died")
                 self.quit = True
                 break
-            if len(ch) == 0:
+            if not ch:
                 log.debug("Input was closed")
                 self.quit = True
                 break
@@ -540,8 +540,10 @@ class Driver(threading.Thread):
                         self.queue_cv.notify()
             elif ch in b'0123456789':
                 buf += ch
+            elif ch in b' \t\r\n':
+                pass
             else:
-                raise ValueError("Invalid request data: %s" % hex(ch))
+                raise ValueError("Invalid frame length character: %r" % ch)
 
         log.info("Codeintel driver ended")
 

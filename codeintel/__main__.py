@@ -308,8 +308,8 @@ class Shell(cmdln.Cmdln):
                 return
 
         else:
-            # force unbuffered stdout
-            fd_in = sys.stdin
+            # force binary unbuffered stdin and stdout
+            fd_in = os.fdopen(sys.stdin.fileno(), 'rb', 0)
             fd_out = os.fdopen(sys.stdout.fileno(), 'wb', 0)
 
         if not os.path.exists(opts.database_dir):
