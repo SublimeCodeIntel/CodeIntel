@@ -144,7 +144,7 @@ class Shell(cmdln.Cmdln):
             prevent codeintel from blowing up the system.
             """
             from ctypes import wintypes
-            kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel32 = ctypes.WinDLL('kernel32' if six.PY3 else b'kernel32', use_last_error=True)
             VirtualAlloc = kernel32.VirtualAlloc
             VirtualAlloc.argtypes = [wintypes.LPVOID, wintypes.ULONG, wintypes.DWORD, wintypes.DWORD]
             VirtualAlloc.restype = wintypes.LPVOID
