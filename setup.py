@@ -217,9 +217,6 @@ install_requires = [
 
 if sys.version_info[0] == 2:
     install_requires.append('clang')
-    if sys.platform != 'win32':
-        # subprocess32 is not available for windows
-        install_requires.append('subprocess32')
 else:
     install_requires.append('libclang-py3')
 
