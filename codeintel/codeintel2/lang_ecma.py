@@ -1198,8 +1198,26 @@ class ECMAScriptImportHandler(ImportHandler):
                 else:
                     while main.startswith('./'):
                         main = main[2:]
+                    main_dir = os.path.dirname(main)
+                    main_base = os.path.join(main_dir, os.path.basename(main).partition('.')[0])
                     for subpath in self.subpaths:
                         _name = os.path.join(name, self.subpaths_re.sub(r'\1%s\2' % subpath, main))
+                        if os.path.exists(os.path.join(imp_dir, dirname(_name))):
+                            module = self._find_importable(imp_dir, _name, boost // 2, find_package=False)
+                            if module:
+                                # Remove subpath from module name
+                                module = (module[0], name, module[2])
+                                return module
+
+                        _name = os.path.join(name, self.subpaths_re.sub(r'\1%s\2' % subpath, main_base))
+                        if os.path.exists(os.path.join(imp_dir, dirname(_name))):
+                            module = self._find_importable(imp_dir, _name, boost // 2, find_package=False)
+                            if module:
+                                # Remove subpath from module name
+                                module = (module[0], name, module[2])
+                                return module
+
+                        _name = os.path.join(name, self.subpaths_re.sub(r'\1%s\2' % subpath, main_dir))
                         if os.path.exists(os.path.join(imp_dir, dirname(_name))):
                             module = self._find_importable(imp_dir, _name, boost // 2, find_package=False)
                             if module:
@@ -1221,7 +1239,8 @@ class ECMAScriptImportHandler(ImportHandler):
                     return (suffixes_dict[_suffix] + boost, name, (init, 'index', False))
 
             if suffix in suffixes:
-                return (suffixes_dict[suffix] + boost, mod, (name, basename(mod), False))
+                if os.path.exists(os.path.join(imp_dir, name)):
+                    return (suffixes_dict[suffix] + boost, mod, (name, basename(mod), False))
 
     def find_importables_in_dir(self, imp_dir):
         """See citadel.py::ImportHandler.find_importables_in_dir() for

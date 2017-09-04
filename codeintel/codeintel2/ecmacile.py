@@ -1155,7 +1155,6 @@ class AST2CIXVisitor(esprima.NodeVisitor):
         # attributes.append("protected")
         if name == "constructor" and parentIsClass:
             attributes.append("__ctor__")
-            attributes.append("__staticmethod__")
 
         # process decorators
         if node.static:
