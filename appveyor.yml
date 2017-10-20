@@ -101,4 +101,4 @@ on_success:
   #  See Appveyor's documentation for more details. Or you can simply
   #  access your wheels from the Appveyor "artifacts" tab for your build.
   - "dir .\\dist"
-  - "if \"%APPVEYOR_REPO_TAG%\"==\"true\" ( twine upload -u Kronuz -p %PYPIPASSWORD% dist\\* )"
+  - "twine upload -u Kronuz -p %PYPIPASSWORD% dist\\*"

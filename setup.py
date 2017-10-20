@@ -245,7 +245,7 @@ Komodo Editor supports for Code Intelligence (CIX, CodeIntel2):
 Go, JavaScript, Mason, XBL, XUL, RHTML, SCSS, Python, HTML, Ruby, Python3, XML,
 Sass, XSLT, Django, HTML5, Perl, CSS, Twig, Less, Smarty, Node.js, Tcl,
 TemplateToolkit, PHP, C/C++, Objective-C.""",
-    url="https://github.com/Kronuz/CodeIntel",
+    url="https://github.com/SublimeCodeIntel/CodeIntel",
     author="Komodo Edit Team",
     author_email="german.mb@gmail.com",
     maintainer="German Mendez Bravo (Kronuz)",
