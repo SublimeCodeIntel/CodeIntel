@@ -239,12 +239,18 @@ setup(
     version=VERSION,
     description="Komodo Edit CodeIntel",
     long_description="""\
-Code intelligence ported from Open Komodo Editor. Supports all the languages
-Komodo Editor supports for Code Intelligence (CIX, CodeIntel2):
+CodeIntel is a code intelligence engine that was ported from Open Komodo Editor
+to a stand-alone Python package.
 
-Go, JavaScript, Mason, XBL, XUL, RHTML, SCSS, Python, HTML, Ruby, Python3, XML,
-Sass, XSLT, Django, HTML5, Perl, CSS, Twig, Less, Smarty, Node.js, Tcl,
-TemplateToolkit, PHP, C/C++, Objective-C.""",
+CodeIntel supports all the languages Komodo Editor supports for Code Intelligence
+(CIX, CodeIntel2) and a few others:
+
+ActionScript, Django, Docker, EJS, epMojo, HTML, KomodoSnippet,
+LaravelBlade, Mason, Mustache, MXML, PHP, R, reStructuredText, RHTML,
+Smarty, TracWiki, TemplateToolkit, Twig, XBL, XML, XSLT, XUL, Python,
+Python3, Ruby, Perl, Go, ECMAScript, JavaScript, Node.js, CSS, SCSS, Sass,
+Less, HTML5, Tcl, C/C++, Objective-C.
+""",
     url="https://github.com/SublimeCodeIntel/CodeIntel",
     author="Komodo Edit Team",
     author_email="german.mb@gmail.com",

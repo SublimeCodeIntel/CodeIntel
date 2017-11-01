@@ -13,7 +13,7 @@ environment:
     # For Python versions available on Appveyor, see
     # http://www.appveyor.com/docs/installed-software#python
     # The list here is complete (excluding Python 2.6, which
-    # isn't covered by this document) at the time of writing.
+    # isn't supported by CodeIntel) at the time of writing.
 
     - PYTHON: "C:\\Python27-x64"
       PYTHON_VERSION: "2.7"
@@ -29,14 +29,6 @@ environment:
       REDIST: "x64"
     - PYTHON: "C:\\Python36"
       PYTHON_VERSION: "3.6"
-      REDIST: "x86"
-
-    - PYTHON: "C:\\Python26-x64"
-      PYTHON_VERSION: "2.6"
-      PYTHON_ARCH: "64"
-      REDIST: "x64"
-    - PYTHON: "C:\\Python26"
-      PYTHON_VERSION: "2.6"
       REDIST: "x86"
 
     - PYTHON: "C:\\Python35-x64"
@@ -68,8 +60,6 @@ install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   # We need wheel installed to build wheels
   - "pip install wheel twine"
-  # Upgrade HTTPS client so twine works in Python 2.6
-  - "pip install --upgrade ndg-httpsclient"
 
 build: off
 
