@@ -1,7 +1,7 @@
 CodeIntel
 =========
 
-[![Build Status](https://travis-ci.org/SublimeCodeIntel/CodeIntel.svg)](https://travis-ci.org/SublimeCodeIntel/CodeIntel) [![Build Status](https://ci.appveyor.com/api/projects/status/github/Kronuz/CodeIntel?svg=true)](https://ci.appveyor.com/project/Kronuz/CodeIntel)
+[![Build Status](https://travis-ci.org/SublimeCodeIntel/CodeIntel.svg)](https://travis-ci.org/SublimeCodeIntel/CodeIntel) [![Build Status](https://ci.appveyor.com/api/projects/status/github/SublimeCodeIntel/CodeIntel?svg=true)](https://ci.appveyor.com/project/Kronuz/CodeIntel)
 
 CodeIntel is a code intelligence engine that was ported from
 [Open Komodo Editor](http://www.openkomodo.com) to a stand-alone Python package.
