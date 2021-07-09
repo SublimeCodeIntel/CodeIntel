@@ -95,6 +95,34 @@ matrix:
            DOCKER_OPTIONS='-e PYTHON_VERSION=33'
            DOCKER_PRE_CMD='linux32'
 
+    - sudo: required
+      arch: arm64
+      services:
+        - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux2014_aarch64'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=36'
+
+    - sudo: required
+      arch: arm64
+      services:
+        - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux2014_aarch64'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=37'
+
+    - sudo: required
+      arch: arm64
+      services:
+        - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux2014_aarch64'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=38'
+
+    - sudo: required
+      arch: arm64
+      services:
+        - docker
+      env: DOCKER_IMAGE='quay.io/pypa/manylinux2014_aarch64'
+           DOCKER_OPTIONS='-e PYTHON_VERSION=39'
+
     # OS X 10.12 binaries
     - os: osx
       osx_image: xcode8.3
